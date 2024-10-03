@@ -1,9 +1,14 @@
+# libxsmm
+include(xsmm)
+message (STATUS "LIBXSMM Include dir: ${XSMM_INCLUDE_DIRS}")
+include_directories(${XSMM_INCLUDE_DIRS})
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)
 add_subdirectory(include)
 add_subdirectory(lib)
 if(TRITON_BUILD_PYTHON_MODULE)
-  add_triton_plugin(TritonCPU ${CMAKE_CURRENT_SOURCE_DIR}/triton_cpu.cc LINK_LIBS TritonCPUToLLVM TritonCPUTransforms)
+  add_triton_plugin(TritonCPU ${CMAKE_CURRENT_SOURCE_DIR}/triton_cpu.cc LINK_LIBS TritonCPUToLLVM TritonCPUTransforms TritonCPUXsmm)
   target_link_libraries(TritonCPU PUBLIC MLIRVectorToSCF MLIRAffineToStandard MLIRMathToLibm)
 endif()
 
@@ -19,7 +24,3 @@ set(SLEEF_BUILD_SCALAR_LIB OFF CACHE BOOL "libsleefscalar will not be built." FO
 add_subdirectory("${CMAKE_SOURCE_DIR}/third_party/sleef" sleef)
 # Override sleef's output directory with our own
 set_target_properties(sleef PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_LIBRARY_OUTPUT_DIRECTORY})
-
-# libxsmm
-include(xsmm)
-message (STATUS "LIBXSMM Include dir: ${XSMM_INCLUDE_DIRS}")
