@@ -32,13 +32,14 @@ endif()
 
 set(XSMM_INCLUDE_DIRS ${LIBXSMMROOT}/include)
 
-add_mlir_library(xsmm STATIC ${XSMM_SRCS})
+add_mlir_library(xsmm SHARED ${XSMM_SRCS})
 target_include_directories(xsmm PUBLIC
   $<BUILD_INTERFACE:${XSMM_INCLUDE_DIRS}>
   $<INSTALL_INTERFACE:include/xsmm>
 )
 add_definitions(-DLIBXSMM_DEFAULT_CONFIG -U_DEBUG -D__BLAS=0)
 
+set_property(TARGET xsmm PROPERTY POSITION_INDEPENDENT_CODE ON) # -fPIC
 set_property(TARGET xsmm PROPERTY COMPILE_WARNING_AS_ERROR ON)
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
