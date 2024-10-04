@@ -8,6 +8,7 @@ add_triton_library(TritonCPUXsmm
     DEPENDS
     TritonCPUXsmmPassIncGen
     TritonCPUXsmmAttrDefIncGen
+    xsmm
 
     LINK_LIBS PUBLIC
     MLIRIR
@@ -18,4 +19,10 @@ add_triton_library(TritonCPUXsmm
     MLIRLLVMDialect
     MLIRInferTypeOpInterface
     MLIRLinalgUtils
+    xsmm
+)
+
+target_include_directories(TritonCPUXsmm
+  PUBLIC
+    $<BUILD_INTERFACE:${XSMM_INCLUDE_DIRS}>
 )
