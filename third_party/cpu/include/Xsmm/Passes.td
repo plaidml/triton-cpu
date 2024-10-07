@@ -3,7 +3,7 @@
 
 include "mlir/Pass/PassBase.td"
 
-def ConvertVectorToXsmm : Pass<"triton-cpu-convert-vector-to-xsmm", "func::FuncOp"> {
+def ConvertVectorToXsmm : Pass<"triton-cpu-convert-vector-to-xsmm", "mlir::ModuleOp"> {
  let summary = "Convert vector to xsmm";
  let description = [{
    Convert vector operations to XSMM operations.
