@@ -14,6 +14,15 @@ endif()
 add_library(TritonCPURuntime SHARED ${CMAKE_CURRENT_SOURCE_DIR}/runtime/cpu_runtime.cpp)
 target_link_libraries(TritonCPURuntime PRIVATE LLVMSupport)
 
+add_library(TritonCPUXsmmRuntime SHARED ${CMAKE_CURRENT_SOURCE_DIR}/lib/Xsmm/runtime/XsmmRunnerUtils.cpp)
+target_link_libraries(TritonCPUXsmmRuntime PRIVATE xsmm)
+set_property(TARGET TritonCPUXsmmRuntime PROPERTY CXX_STANDARD 11)
+target_compile_definitions(TritonCPUXsmmRuntime PRIVATE mlir_c_runner_utils_EXPORTS)
+target_include_directories(TritonCPUXsmmRuntime
+  PUBLIC
+    $<BUILD_INTERFACE:${XSMM_INCLUDE_DIRS}>
+)
+
 # Build and link sleef
 set(SLEEF_BUILD_SHARED_LIBS ON CACHE BOOL "Build sleef shared lib" FORCE)
 set(SLEEF_BUILD_DFT OFF CACHE BOOL "Don't build sleef DFT lib" FORCE)
