@@ -2,6 +2,7 @@
 #include "TritonCPUToLLVM/Passes.h"
 #include "TritonCPUTransforms/Passes.h"
 #include "TritonToTritonCPU/Passes.h"
+#include "Xsmm/Passes.h"
 
 #include "triton/Dialect/TritonCPU/IR/Dialect.h"
 
@@ -139,6 +140,9 @@ void init_triton_cpu_passes_ttcpuir(py::module &&m) {
   });
   m.def("add_func_to_llvmir", [](mlir::PassManager &pm) {
     pm.addPass(mlir::createConvertFuncToLLVMPass());
+  });
+  m.def("add_convert_vector_to_xsmm", [](mlir::PassManager &pm) {
+    pm.addPass(mlir::triton::cpu::createConvertVectorToXsmm());
   });
 }
 
