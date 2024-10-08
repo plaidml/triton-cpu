@@ -80,7 +80,10 @@ buildBrgemm(PatternRewriter &rewriter, Operation *contractOp, ValueRange inputs,
     invokeName = "xsmm_brgemm_invoke";
   }
 
-  auto dims = SmallVector<int64_t>{m, n, k, lda, ldb, ldc, strideA, strideB};
+  auto dims = SmallVector<int64_t>{m, n, k, lda, ldb, ldc};
+  if (batch != 0) {
+    dims.append({strideA, strideB});
+  }
   for (size_t idx = 0; idx < dims.size(); idx++) {
     dispatchOperands.push_back(rewriter.create<arith::ConstantOp>(
         loc, integer64, rewriter.getIntegerAttr(integer64, dims[idx])));
