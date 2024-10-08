@@ -106,9 +106,11 @@ buildBrgemm(PatternRewriter &rewriter, Operation *contractOp, ValueRange inputs,
   for (auto operand : inputs) {
     operandRange.push_back(operand);
   }
-  Value batchDim = rewriter.create<arith::ConstantOp>(
-      loc, integer64, rewriter.getIntegerAttr(integer64, batch));
-  operandRange.push_back(batchDim);
+  if (batch != 0) {
+    Value batchDim = rewriter.create<arith::ConstantOp>(
+        loc, integer64, rewriter.getIntegerAttr(integer64, batch));
+    operandRange.push_back(batchDim);
+  }
   auto invokeCall = xsmm::utils::buildInvokeCall(
       rewriter, loc, module, operandRange, invokeName, dtype);
   return std::make_pair(&*dispatched, &*invokeCall);
