@@ -19,6 +19,7 @@
 #include "llvm/ADT/SmallVector.h"
 
 #include <cstdint>
+#include <utility>
 
 using namespace mlir;
 
@@ -27,6 +28,8 @@ class Type;
 class RewriterBase;
 class ArrayAttr;
 class Operation;
+class ValueRange;
+class Attribute;
 
 namespace xsmm {
 
@@ -141,6 +144,11 @@ func::CallOp buildDispatchCall(RewriterBase &rewriter, Location loc,
 func::CallOp buildInvokeCall(RewriterBase &rewriter, Location loc,
                              ModuleOp module, SmallVector<Value> operands,
                              StringRef invokeName, DataTypeAttr dtype);
+
+// Create a pair of XSMM dispatch and invoke (BR)GEMM calls.
+std::pair<Operation *, Operation *>
+buildBrgemmCalls(PatternRewriter &rewriter, Operation *op, ValueRange inputs,
+                 xsmm::BrgemmInfo brgemmInfo, SmallVector<Attribute> flags);
 
 } // namespace utils
 } // namespace xsmm

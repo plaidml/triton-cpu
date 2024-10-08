@@ -16,15 +16,17 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Utils/IndexingUtils.h"
+#include "mlir/IR/BuiltinDialect.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
+#include "mlir/IR/Operation.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/TypeUtilities.h"
+#include "mlir/IR/Value.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Compiler.h"
 
 #include <functional>
 #include <optional>
-#include <utility>
 
 #define DEBUG_TYPE "xsmm-utils"
 
@@ -196,7 +198,7 @@ checkAccess(PatternRewriter &rewriter, vector::ContractionOp contractOp,
       stridesOnOperand =
           getVNNIStaticStrides(dyn_cast<MemRefType>(operand.getType()));
     } else {
-      stridesOnOperand = ::mlir::utils::getStaticStrides(operand);
+      stridesOnOperand = mlir::utils::getStaticStrides(operand);
     }
     if (failed(stridesOnOperand) ||
         (dataType ==
@@ -1006,6 +1008,75 @@ func::CallOp buildInvokeCall(RewriterBase &rewriter, Location loc,
       xsmm::utils::getOperands(rewriter, loc, operandRange, dtype));
 
   return call;
+}
+
+std::pair<Operation *, Operation *>
+buildBrgemmCalls(PatternRewriter &rewriter, Operation *op, ValueRange inputs,
+                 xsmm::BrgemmInfo brgemmInfo, SmallVector<Attribute> flags) {
+  assert(inputs.size() == 3 && "Expects three inputs for BRGEMM call");
+  auto m = brgemmInfo.m;
+  auto n = brgemmInfo.n;
+  auto k = brgemmInfo.k;
+  auto batch = brgemmInfo.batch;
+  int64_t lda = brgemmInfo.lda;
+  int64_t ldb = brgemmInfo.ldb;
+  int64_t ldc = brgemmInfo.ldc;
+  int64_t strideA = brgemmInfo.strideA;
+  int64_t strideB = brgemmInfo.strideB;
+  auto loc = op->getLoc();
+  auto dtype = xsmm::utils::getDataType(rewriter, inputs[0].getType());
+  IntegerType integer64 = IntegerType::get(rewriter.getContext(), 64);
+  SmallVector<Value, 10> dispatchOperands;
+  SmallVector<Type, 10> dispatchOperandTypes;
+  // Dispatch the data type.
+  dispatchOperands.push_back(rewriter.create<arith::ConstantOp>(
+      loc, integer64, cast<TypedAttr>(dtype)));
+  dispatchOperandTypes.push_back(integer64);
+
+  ArrayAttr brgemmFlags = rewriter.getArrayAttr(flags);
+  SmallVector<Value, 10> invokeOperands;
+  std::string dispatchName = "xsmm_gemm_dispatch";
+  std::string invokeName = "xsmm_gemm_invoke";
+
+  if (batch != 0) {
+    dispatchName = "xsmm_brgemm_dispatch";
+    invokeName = "xsmm_brgemm_invoke";
+  }
+
+  auto dims = SmallVector<int64_t>{m, n, k, lda, ldb, ldc};
+  if (batch != 0) {
+    dims.append({strideA, strideB});
+  }
+  for (size_t idx = 0; idx < dims.size(); idx++) {
+    dispatchOperands.push_back(rewriter.create<arith::ConstantOp>(
+        loc, integer64, rewriter.getIntegerAttr(integer64, dims[idx])));
+    dispatchOperandTypes.push_back(integer64);
+  }
+  // Dispatch the flags. Pass to the library the already ored-flag to
+  // avoid changing the interface every time we add a new flag. Flags
+  // are assumed to be verified before (i.e., op verifier).
+  int64_t oredFlag = xsmm::utils::getOredFlags(brgemmFlags);
+
+  dispatchOperands.push_back(rewriter.create<arith::ConstantOp>(
+      loc, integer64, IntegerAttr::get(rewriter.getI64Type(), oredFlag)));
+  dispatchOperandTypes.push_back(integer64);
+  ModuleOp module = op->getParentOfType<ModuleOp>();
+  auto dispatched = xsmm::utils::buildDispatchCall(
+      rewriter, loc, dispatchOperands, dispatchOperandTypes, module,
+      SymbolRefAttr::get(op->getContext(), dispatchName));
+  SmallVector<Value, 6> operandRange;
+  operandRange.push_back(dispatched.getResult(0));
+  for (auto operand : inputs) {
+    operandRange.push_back(operand);
+  }
+  if (batch != 0) {
+    Value batchDim = rewriter.create<arith::ConstantOp>(
+        loc, integer64, rewriter.getIntegerAttr(integer64, batch));
+    operandRange.push_back(batchDim);
+  }
+  auto invokeCall = xsmm::utils::buildInvokeCall(
+      rewriter, loc, module, operandRange, invokeName, dtype);
+  return std::make_pair(&*dispatched, &*invokeCall);
 }
 
 } // namespace utils

@@ -37,7 +37,7 @@ bool isZeroOp(Operation *);
 // Returns the strides of `val`. The method returns something usefull
 // only if the `val` type is a strided memref and the strides are statically
 // known.
-FailureOr<llvm::SmallVector<int64_t>> getStaticStrides(Value val);
+FailureOr<SmallVector<int64_t>> getStaticStrides(Value val);
 
 // Return the offset and ptr for `val`. Assert if `val`
 // is not a memref.
