@@ -16,6 +16,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Utils/IndexingUtils.h"
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/Dialect/Vector/IR/VectorOps.h"
 #include "mlir/IR/BuiltinDialect.h"
 #include "mlir/IR/Operation.h"
@@ -48,11 +49,17 @@ namespace {
 static Value getMemrefSource(PatternRewriter &rewriter, Operation *op,
                              TypedValue<Type> operand) {
   Location loc = op->getLoc();
+  MLIRContext *ctx = op->getContext();
   OpBuilder::InsertionGuard g(rewriter);
 
   if (auto readOp =
           dyn_cast_or_null<vector::TransferReadOp>(operand.getDefiningOp())) {
-    return readOp.getSource();
+    VectorType vecTy = readOp.getVectorType();
+    SmallVector<int64_t> strides(vecTy.getRank(), 1);
+    return rewriter.create<memref::SubViewOp>(
+        loc, readOp.getSource(), getAsOpFoldResult(readOp.getIndices()),
+        getAsIndexOpFoldResult(ctx, vecTy.getShape()),
+        getAsIndexOpFoldResult(ctx, strides));
   }
 
   rewriter.setInsertionPoint(op);

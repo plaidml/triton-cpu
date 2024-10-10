@@ -184,6 +184,7 @@ class CPUBackend(BaseBackend):
         if options.enable_xsmm:
             cpu.passes.ttcpuir.add_convert_vector_to_xsmm(pm)
         cpu.passes.ttcpuir.add_lower_vector_multi_dim(pm)
+        cpu.passes.ttcpuir.add_expand_strided_metadata(pm)
         cpu.passes.ttcpuir.add_vector_to_scf(pm, True, 1, False)
         cpu.passes.ttcpuir.add_lower_affine(pm)
         passes.convert.add_scf_to_cf(pm)

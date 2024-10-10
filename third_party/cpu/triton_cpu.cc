@@ -9,6 +9,7 @@
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h"
 #include "mlir/Conversion/Passes.h"
 #include "mlir/Conversion/VectorToLLVM/ConvertVectorToLLVMPass.h"
+#include "mlir/Dialect/MemRef/Transforms/Passes.h"
 #include "mlir/Dialect/Vector/IR/VectorOps.h"
 #include "mlir/Dialect/Vector/Transforms/Passes.h"
 #include "mlir/Pass/Pass.h"
@@ -143,6 +144,9 @@ void init_triton_cpu_passes_ttcpuir(py::module &&m) {
   });
   m.def("add_convert_vector_to_xsmm", [](mlir::PassManager &pm) {
     pm.addPass(mlir::triton::cpu::createConvertVectorToXsmm());
+  });
+  m.def("add_expand_strided_metadata", [](mlir::PassManager &pm) {
+    pm.addPass(mlir::memref::createExpandStridedMetadataPass());
   });
 }
 
