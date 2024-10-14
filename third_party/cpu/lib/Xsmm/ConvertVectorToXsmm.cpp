@@ -124,7 +124,8 @@ static std::optional<Value> hoistAccumulationBuffer(PatternRewriter &rewriter,
     return std::nullopt;
 
   // Create a buffer outside the loop.
-  unsigned argIdx = blockArg.getArgNumber() - 1;
+  // In scf.for, iter_args are positioned after induction variable.
+  unsigned argIdx = blockArg.getArgNumber() - forOp.getNumInductionVars();
   Value accBuf = getMemrefSource(rewriter, forOp, forOp.getInitArgs()[argIdx]);
 
   // For simplicity, feed the iter_arg directly into loop yield terminator.
