@@ -1,2 +1,3 @@
 add_subdirectory(TritonToTritonGPU)
+add_subdirectory(TritonToStructured)
 add_subdirectory(TritonGPUToLLVM)
