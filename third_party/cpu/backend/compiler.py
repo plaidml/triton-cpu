@@ -121,9 +121,6 @@ class CPUBackend(BaseBackend):
         passes.common.add_cse(pm)
         passes.common.add_licm(pm)
         passes.common.add_symbol_dce(pm)
-        if opt.enable_triton_xsmm:
-            cpu.passes.ttcpuir.add_convert_triton_to_xsmm(pm)
-            passes.common.add_canonicalizer(pm)
         pm.run(mod)
         return mod
 
@@ -132,6 +129,9 @@ class CPUBackend(BaseBackend):
         # TTIR -> TTCIR
         pm = ir.pass_manager(mod.context)
         pm.enable_debug()
+        if opt.enable_triton_xsmm:
+            cpu.passes.ttcpuir.add_convert_triton_to_xsmm(pm)
+            passes.common.add_canonicalizer(pm)
         cpu.passes.ttcpuir.add_scalarize(pm)
         cpu.passes.ttcpuir.add_convert_memory_ops(pm)
         cpu.passes.ttcpuir.add_convert_ptr_ops(pm)
