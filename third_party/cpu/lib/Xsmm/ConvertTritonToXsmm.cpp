@@ -26,6 +26,8 @@
 #include "triton/Dialect/TritonCPU/IR/Dialect.h"
 #include "llvm/Support/Debug.h"
 
+#include "cpu/include/Analysis/TensorPtrShapeInfo.h"
+
 #include <optional>
 #include <utility>
 
@@ -46,13 +48,55 @@ namespace cpu {
 
 namespace {
 
+// Helper from MemoryOpConversion.
+// Extract memref out of block pointer.
+static Value extractMemRef(PatternRewriter &rewriter, Value ptr,
+                           ModuleTensorPtrShapeInfoAnalysis &shapeAnalysis) {
+  Location loc = ptr.getLoc();
+  MLIRContext *ctx = ptr.getContext();
+
+  auto tensorTy = dyn_cast<RankedTensorType>(
+      dyn_cast<PointerType>(ptr.getType()).getPointeeType());
+  auto elemTy = tensorTy.getElementType();
+  auto shapeInfo = shapeAnalysis.getPtrShapeInfo(ptr);
+  Type memRefTy;
+  if (shapeInfo && shapeInfo->getRank() > 0) {
+    auto layout = StridedLayoutAttr::get(ctx, 0, shapeInfo->getStrides());
+    memRefTy = MemRefType::get(shapeInfo->getShape(), elemTy, layout);
+  } else {
+    SmallVector<int64_t> dynVals(tensorTy.getRank(), ShapedType::kDynamic);
+    auto layout = StridedLayoutAttr::get(ctx, 0, dynVals);
+    memRefTy = MemRefType::get(dynVals, elemTy, layout);
+  }
+  return rewriter.create<triton::cpu::ExtractMemRefOp>(loc, memRefTy, ptr);
+}
+
 static Value getMemrefSource(PatternRewriter &rewriter, Operation *op,
-                             TypedValue<RankedTensorType> operand) {
+                             TypedValue<RankedTensorType> operand,
+                             ModuleTensorPtrShapeInfoAnalysis &shapeAnalysis) {
   Location loc = op->getLoc();
+  MLIRContext *ctx = op->getContext();
+
   OpBuilder::InsertionGuard g(rewriter);
   rewriter.setInsertionPoint(op);
 
   RankedTensorType tensorTy = operand.getType();
+
+  if (auto loadOp = dyn_cast_or_null<triton::LoadOp>(operand.getDefiningOp())) {
+    auto ptr = loadOp.getPtr();
+    if (triton::isTensorPointerType(ptr.getType())) {
+      auto memref = extractMemRef(rewriter, ptr, shapeAnalysis);
+      auto indices =
+          rewriter.create<triton::cpu::ExtractIndicesOp>(loc, ptr).getResults();
+      SmallVector<int64_t> strides(tensorTy.getRank(), 1);
+
+      return rewriter.create<memref::SubViewOp>(
+          loc, memref, getAsOpFoldResult(indices),
+          getAsIndexOpFoldResult(ctx, tensorTy.getShape()),
+          getAsIndexOpFoldResult(ctx, strides));
+    }
+  }
+
   MemRefType memTy =
       MemRefType::get(tensorTy.getShape(), tensorTy.getElementType());
   auto alloca = rewriter.create<memref::AllocaOp>(loc, memTy);
@@ -63,6 +107,11 @@ static Value getMemrefSource(PatternRewriter &rewriter, Operation *op,
 
 struct DotToXsmm : public OpRewritePattern<triton::DotOp> {
   using OpRewritePattern::OpRewritePattern;
+
+  DotToXsmm(MLIRContext *ctx,
+            ModuleTensorPtrShapeInfoAnalysis &shapeInfoAnalysis)
+      : OpRewritePattern<triton::DotOp>(ctx), shapeAnalysis(shapeInfoAnalysis) {
+  }
 
   LogicalResult matchAndRewrite(triton::DotOp dotOp,
                                 PatternRewriter &rewriter) const override {
@@ -96,9 +145,9 @@ struct DotToXsmm : public OpRewritePattern<triton::DotOp> {
     TypedValue<RankedTensorType> acc = dotOp.getC();
 
     SmallVector<Attribute> flags;
-    Value lhsBuf = getMemrefSource(rewriter, dotOp, lhs);
-    Value rhsBuf = getMemrefSource(rewriter, dotOp, rhs);
-    Value accBuf = getMemrefSource(rewriter, dotOp, acc);
+    Value lhsBuf = getMemrefSource(rewriter, dotOp, lhs, shapeAnalysis);
+    Value rhsBuf = getMemrefSource(rewriter, dotOp, rhs, shapeAnalysis);
+    Value accBuf = getMemrefSource(rewriter, dotOp, acc, shapeAnalysis);
     SmallVector<Value> inputs{lhsBuf, rhsBuf, accBuf};
     SmallVector<Value> outputs{nullptr};
 
@@ -119,6 +168,9 @@ struct DotToXsmm : public OpRewritePattern<triton::DotOp> {
 
     return success();
   }
+
+private:
+  ModuleTensorPtrShapeInfoAnalysis &shapeAnalysis;
 };
 
 struct ConvertTritonToXsmm
@@ -127,10 +179,13 @@ struct ConvertTritonToXsmm
 
   void runOnOperation() override {
     MLIRContext *context = &getContext();
+    ModuleOp mod = getOperation();
+
+    ModuleTensorPtrShapeInfoAnalysis shapeInfoAnalysis(mod);
+
     RewritePatternSet patterns(context);
-    patterns.add<DotToXsmm>(context);
-    if (failed(mlir::applyPatternsAndFoldGreedily(getOperation(),
-                                                  std::move(patterns))))
+    patterns.add<DotToXsmm>(context, shapeInfoAnalysis);
+    if (failed(mlir::applyPatternsAndFoldGreedily(mod, std::move(patterns))))
       return signalPassFailure();
   }
 };
