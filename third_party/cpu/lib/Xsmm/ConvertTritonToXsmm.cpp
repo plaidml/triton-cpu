@@ -136,6 +136,9 @@ hoistAccumulationBuffer(PatternRewriter &rewriter, Operation *op,
   BlockArgument blockArg = dyn_cast<BlockArgument>(operand);
   if (!forOp || !blockArg)
     return std::nullopt;
+  OpOperand *loopArg = forOp.getTiedLoopInit(blockArg);
+  if (!loopArg)
+    return std::nullopt;
 
   // The accumulation iter_arg can be safely moved outside the loop only
   // for the following chain: iter_arg -> contraction -> yield
@@ -146,11 +149,8 @@ hoistAccumulationBuffer(PatternRewriter &rewriter, Operation *op,
     return std::nullopt;
 
   // Create a buffer outside the loop.
-  // In scf.for, iter_args are positioned after induction variable.
-  unsigned argIdx = blockArg.getArgNumber() - forOp.getNumInductionVars();
   Value accBuf = getMemrefSource(
-      rewriter, forOp,
-      dyn_cast<TypedValue<RankedTensorType>>(forOp.getInitArgs()[argIdx]),
+      rewriter, forOp, dyn_cast<TypedValue<RankedTensorType>>(loopArg->get()),
       shapeAnalysis);
 
   // For simplicity, feed the iter_arg directly into loop yield terminator.
@@ -164,7 +164,8 @@ hoistAccumulationBuffer(PatternRewriter &rewriter, Operation *op,
 
   auto loadOp =
       rewriter.create<triton::cpu::LoadOp>(loc, operand.getType(), accBuf);
-  rewriter.replaceAllUsesWith(forOp.getResults()[argIdx], loadOp.getResult());
+  rewriter.replaceAllUsesWith(forOp.getTiedLoopResult(blockArg),
+                              loadOp.getResult());
 
   return accBuf;
 }
