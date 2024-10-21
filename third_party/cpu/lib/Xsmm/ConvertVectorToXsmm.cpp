@@ -84,14 +84,16 @@ static Value getMemrefSource(PatternRewriter &rewriter, Operation *op,
 // Returns new accumulation buffer or std::nullopt, otherwise.
 //
 // Rewrites the following pattern:
-//   %acc = ... vector<...>
-//   %0 = scf.for ... iter_args(%acc)
+//   %init = ... vector<...>
+//   %0 = scf.for ... iter_args(%acc = %init)
 //     %res = GEMM(%A, %B, %acc) -> vector<...>
 //     scf.yield %res
 //   consumer(%0)
 // into:
+//   %init = ... vector<...>
 //   %hoisted = ... memref<...>
-//   %unused = %scf.for ... iter_args(%acc)
+//   store %init, %hoisted
+//   %unused = %scf.for ... iter_args(%acc = %init)
 //     %res = GEMM(%A, %B, %acc)
 //     scf.yield %acc
 //   %0 = load(%hoisted) -> vector<...>
