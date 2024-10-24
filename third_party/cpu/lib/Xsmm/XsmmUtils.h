@@ -34,16 +34,16 @@ class Attribute;
 namespace xsmm {
 
 struct BrgemmInfo {
-  int64_t m;
-  int64_t n;
-  int64_t k;
-  int64_t batch;
+  OpFoldResult m;
+  OpFoldResult n;
+  OpFoldResult k;
+  OpFoldResult batch;
 
-  int64_t lda;
-  int64_t ldb;
-  int64_t ldc;
-  int64_t strideA;
-  int64_t strideB;
+  OpFoldResult lda;
+  OpFoldResult ldb;
+  OpFoldResult ldc;
+  OpFoldResult strideA;
+  OpFoldResult strideB;
 
   bool isVnni = false;
 };
@@ -117,8 +117,8 @@ FailureOr<vector::ContractionOp>
 makeMinorDimensionsInnerMost(RewriterBase &rewriter,
                              vector::ContractionOp contractOp, unsigned m,
                              unsigned n, unsigned k, IntegerAttr type);
-std::optional<unsigned> getPosInCodomain(unsigned dim, Value operand,
-                                         Operation *contractOp, AffineMap map);
+std::optional<unsigned> getPosInCodomain(unsigned dim, AffineMap map,
+                                         MLIRContext *ctx);
 FailureOr<xsmm::BrgemmInfo>
 checkAccess(PatternRewriter &rewriter, Operation *contractOp, unsigned m,
             unsigned n, SmallVector<unsigned, 2> kVector,

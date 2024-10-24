@@ -22,6 +22,8 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/TypeUtilities.h"
 #include "mlir/IR/Value.h"
+#include "triton/Dialect/Triton/IR/Dialect.h"  // for tt.make_tensor.prt
+#include "triton/Dialect/TritonCPU/IR/Dialect.h" // for triton_cpu.extract_*
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Compiler.h"
 
@@ -68,8 +70,12 @@ struct HasStaticStrides {
     SmallVector<int64_t> strides;
     if (auto memRefType = dyn_cast_or_null<MemRefType>(operandType)) {
       int64_t offset;
-      if (failed(getStridesAndOffset(memRefType, strides, offset)))
+      if (failed(getStridesAndOffset(memRefType, strides, offset))) {
         return false;
+      }
+      if (auto subviewOp = dyn_cast<memref::SubViewOp>(op)) {
+        strides = SmallVector<int64_t>(subviewOp.getStaticStrides());
+      }
       if (llvm::any_of(strides, [](int64_t stride) {
             return stride == ShapedType::kDynamic;
           })) {
@@ -87,25 +93,19 @@ struct HasStaticStrides {
 static FailureOr<ContractionDimensions>
 checkStructure(Operation *contractOp, SmallVector<Value> &inputs,
                SmallVector<Value> &outputs, ArrayRef<AffineMap> indexingMap) {
-  if (!HasStaticShape()(inputs[0], inputs[0].getDefiningOp()) ||
-      !HasStaticShape()(inputs[1], inputs[1].getDefiningOp()) ||
-      !HasStaticShape()(inputs[2], inputs[2].getDefiningOp()) ||
-      (outputs[0] != nullptr &&
-       !HasStaticShape()(outputs[0], outputs[0].getDefiningOp())) ||
-      !HasStaticStrides()(inputs[0], inputs[0].getDefiningOp()) ||
+  if (!HasStaticStrides()(inputs[0], inputs[0].getDefiningOp()) ||
       !HasStaticStrides()(inputs[1], inputs[1].getDefiningOp()) ||
       !HasStaticStrides()(inputs[2], inputs[2].getDefiningOp()) ||
       (outputs[0] != nullptr &&
-       !HasStaticStrides()(outputs[0], outputs[0].getDefiningOp()))) {
+       !HasStaticStrides()(outputs[0], outputs[0].getDefiningOp())))
     return failure();
-  }
   return inferContractionDims(indexingMap);
 }
 
 // Return the position of `dim` in the codomain of `operand`.
-std::optional<unsigned> getPosInCodomain(unsigned dim, Value operand,
-                                         Operation *contractOp, AffineMap map) {
-  return map.getResultPosition(getAffineDimExpr(dim, contractOp->getContext()));
+std::optional<unsigned> getPosInCodomain(unsigned dim, AffineMap map,
+                                         MLIRContext *ctx) {
+  return map.getResultPosition(getAffineDimExpr(dim, ctx));
 }
 
 static SmallVector<int64_t, 4>
@@ -157,64 +157,80 @@ getVNNIStaticStrides(MemRefType valueType) {
 
 // Access matcher.
 FailureOr<xsmm::BrgemmInfo>
-checkAccess(PatternRewriter &rewriter, Operation *contractOp, unsigned m,
-            unsigned n, SmallVector<unsigned, 2> kVector,
+checkAccess(PatternRewriter &rewriter, Operation *contractOp, unsigned posM,
+            unsigned posN, SmallVector<unsigned, 2> posKs,
             std::optional<unsigned> batchPos, SmallVector<Value> inputs,
             ArrayRef<AffineMap> indexingMap) {
   MLIRContext *ctx = contractOp->getContext();
 
+  assert(inputs.size() == 3);
   Value operandA = inputs[0];
   Value operandB = inputs[1];
   Value operandC = inputs[2];
 
-  unsigned k;
-  if (*xsmm::utils::getPosInCodomain(kVector[0],
-                                     contractOp->getOpOperand(1).get(),
-                                     contractOp, indexingMap[1]) <
-          *xsmm::utils::getPosInCodomain(n, contractOp->getOpOperand(1).get(),
-                                         contractOp, indexingMap[1]) ||
-      kVector.size() == 1) {
-    k = kVector[0];
-  } else if (kVector.size() > 1) {
-    k = kVector[1];
+  unsigned posK = posKs[0];
+  // TODO: this selection of posK requires explanation
+  if (posKs.size() > 1 && (*getPosInCodomain(posKs[0], indexingMap[1], ctx) <=
+                           *getPosInCodomain(posN, indexingMap[1], ctx))) {
+    posK = posKs[1];
   }
 
-  auto checkStridesAndGetLda = [&](unsigned minorDim, unsigned majorDim,
-                                   Value operand, AffineMap map,
-                                   int operandIndex) -> FailureOr<int64_t> {
-    auto minorDimPosInCodomain =
-        xsmm::utils::getPosInCodomain(minorDim, operand, contractOp, map);
-    auto majorDimPosInCodomain =
-        xsmm::utils::getPosInCodomain(majorDim, operand, contractOp, map);
+  IntegerType integer64 = IntegerType::get(rewriter.getContext(), 64);
+
+  auto checkStridesAndGetMajorDimStride =
+      [&](unsigned posMinorDim, unsigned posMajorDim, Value operand,
+          AffineMap map, int operandIndex) -> FailureOr<OpFoldResult> {
+    auto minorDimPosInCodomain = getPosInCodomain(posMinorDim, map, ctx);
+    auto majorDimPosInCodomain = getPosInCodomain(posMajorDim, map, ctx);
     if (!minorDimPosInCodomain || !majorDimPosInCodomain) {
       return failure();
     }
-    auto dataType = xsmm::utils::getDataType(rewriter, operand.getType());
+    auto dataType = getDataType(rewriter, operand.getType());
     FailureOr<SmallVector<int64_t>> stridesOnOperand;
-    if (dataType == DataTypeAttr::get(ctx, xsmm::DataType::BF16) &&
-        operandIndex == 1) {
-      stridesOnOperand =
-          getVNNIStaticStrides(dyn_cast<MemRefType>(operand.getType()));
+    if (auto subView = operand.getDefiningOp<memref::SubViewOp>()) {
+      stridesOnOperand = SmallVector<int64_t>(subView.getStaticStrides());
+      // NB: The following is a hack to get the dynamic strides directly from
+      //     the `tt.make_tensor_ptr` op from where the memref originates.
+      if (auto extractMemRef =
+              subView.getSource()
+                  .getDefiningOp<triton::cpu::ExtractMemRefOp>()) {
+        if (auto makeTensorPtr =
+                extractMemRef.getSrc()
+                    .getDefiningOp<triton::MakeTensorPtrOp>()) {
+          OperandRange strides = makeTensorPtr.getStrides();
+          // FIXME: this exit ignores checking minor dim strides.
+          return OpFoldResult(strides[*majorDimPosInCodomain]);
+        }
+      }
     } else {
-      stridesOnOperand = mlir::utils::getStaticStrides(operand);
+      if (dataType == DataTypeAttr::get(ctx, xsmm::DataType::BF16) &&
+          operandIndex == 1) {
+        // TODO: make the following do folding on dynamic strides
+        stridesOnOperand =
+            getVNNIStaticStrides(dyn_cast<MemRefType>(operand.getType()));
+      } else {
+        stridesOnOperand = mlir::utils::getStaticStrides(operand);
+      }
     }
+    int64_t minorDimStride = (*stridesOnOperand)[*minorDimPosInCodomain];
     if (failed(stridesOnOperand) ||
-        (dataType == DataTypeAttr::get(ctx, xsmm::DataType::BF16) &&
-         operandIndex == 0 &&
-         (*stridesOnOperand)[*minorDimPosInCodomain] != 2) ||
-        ((dataType != DataTypeAttr::get(ctx, xsmm::DataType::BF16) &&
-          (*stridesOnOperand)[*minorDimPosInCodomain] != 1))) {
+        (dataType.getValue() == DataType::BF16 && operandIndex == 0 &&
+         minorDimStride != 2) ||
+        ((dataType.getValue() != DataType::BF16 && minorDimStride != 1))) {
       return failure();
     }
-    if (dataType == DataTypeAttr::get(ctx, xsmm::DataType::BF16) &&
-        operandIndex == 1) {
-      return (*stridesOnOperand)[*majorDimPosInCodomain + 1];
+    // TODO: re-enable
+    if (dataType.getValue() == xsmm::DataType::BF16 && operandIndex == 1) {
+      return {IntegerAttr::get(
+          integer64, (*stridesOnOperand)[*majorDimPosInCodomain + 1])};
     } else {
-      return (*stridesOnOperand)[*majorDimPosInCodomain];
+      return {IntegerAttr::get(integer64,
+                               (*stridesOnOperand)[*majorDimPosInCodomain])};
     }
   };
   // A(m, k)
-  auto lda = checkStridesAndGetLda(k, m, operandA, indexingMap[0], 0);
+  auto lda =
+      checkStridesAndGetMajorDimStride(posK, posM, operandA, indexingMap[0], 0);
   if (failed(lda)) {
     LLVM_DEBUG(llvm::dbgs() << "Failed to compute lda\n");
     return failure();
@@ -224,7 +240,8 @@ checkAccess(PatternRewriter &rewriter, Operation *contractOp, unsigned m,
                              "A: OK\n");
 
   // B(k, n)
-  auto ldb = checkStridesAndGetLda(n, k, operandB, indexingMap[1], 1);
+  auto ldb =
+      checkStridesAndGetMajorDimStride(posN, posK, operandB, indexingMap[1], 1);
   if (failed(ldb)) {
     LLVM_DEBUG(llvm::dbgs() << "Failed to compute ldb\n");
 
@@ -235,7 +252,8 @@ checkAccess(PatternRewriter &rewriter, Operation *contractOp, unsigned m,
                              "B: OK\n");
 
   // C(m, n)
-  auto ldc = checkStridesAndGetLda(n, m, operandC, indexingMap[2], 2);
+  auto ldc =
+      checkStridesAndGetMajorDimStride(posN, posM, operandC, indexingMap[2], 2);
   if (failed(ldc)) {
     LLVM_DEBUG(llvm::dbgs() << "Failed to compute ldc\n");
     return failure();
@@ -244,29 +262,54 @@ checkAccess(PatternRewriter &rewriter, Operation *contractOp, unsigned m,
                              "mm] Strides on "
                              "C: OK\n");
 
-  int64_t strideA = 1;
-  int64_t strideB = 1;
+  OpFoldResult strideA = IntegerAttr::get(integer64, 1);
+  OpFoldResult strideB = IntegerAttr::get(integer64, 1);
   if (batchPos) {
-    auto batchPosCodomainA = getPosInCodomain(batchPos.value(), operandA,
-                                              contractOp, indexingMap[0]);
+    // TODO: following will crash on dynamic strides...
+    auto batchPosCodomainA =
+        getPosInCodomain(batchPos.value(), indexingMap[0], ctx);
     auto stridesOnA = ::mlir::utils::getStaticStrides(operandA);
-    strideA = (*stridesOnA)[*batchPosCodomainA];
+    strideA = IntegerAttr::get(integer64, (*stridesOnA)[*batchPosCodomainA]);
 
-    auto batchPosCodomainB = getPosInCodomain(batchPos.value(), operandB,
-                                              contractOp, indexingMap[1]);
+    auto batchPosCodomainB =
+        getPosInCodomain(batchPos.value(), indexingMap[1], ctx);
     auto stridesOnB = ::mlir::utils::getStaticStrides(operandB);
-    strideB = (*stridesOnB)[*batchPosCodomainB];
+    strideB = IntegerAttr::get(integer64, (*stridesOnB)[*batchPosCodomainB]);
   }
 
-  auto loops = computeStaticLoopSizes(contractOp, indexingMap);
-  int64_t batchVal = (batchPos) ? loops[batchPos.value()] : 0;
+  OpFoldResult sizeM = nullptr, sizeN = nullptr, sizeK = nullptr;
+  if (auto subViewA = operandA.getDefiningOp<memref::SubViewOp>()) {
+    SmallVector<OpFoldResult> mixedSizesA = subViewA.getMixedSizes();
+    auto posMInA = *getPosInCodomain(posM, indexingMap[0], ctx);
+    auto posKInA = *getPosInCodomain(posK, indexingMap[0], ctx);
+    sizeM = mixedSizesA[posMInA];
+    sizeK = mixedSizesA[posKInA];
+  }
+  if (auto subViewB = operandB.getDefiningOp<memref::SubViewOp>()) {
+    SmallVector<OpFoldResult> mixedSizesB = subViewB.getMixedSizes();
+    auto posKInB = *getPosInCodomain(posK, indexingMap[1], ctx);
+    auto posNInB = *getPosInCodomain(posN, indexingMap[1], ctx);
+    sizeK = mixedSizesB[posKInB];
+    sizeN = mixedSizesB[posNInB];
+  }
 
-  auto loopsK = 1;
-  for (auto kItr : kVector)
-    loopsK *= loops[kItr];
+  int64_t batchVal = 0;
+  if (!sizeM || !sizeN || !sizeK) { // TODO: this check is way too coarse...
+    auto loops = computeStaticLoopSizes(contractOp, indexingMap);
+    sizeM = IntegerAttr::get(integer64, loops[posM]);
+    sizeM = IntegerAttr::get(integer64, loops[posK]);
+    sizeN = IntegerAttr::get(integer64, loops[posN]);
+    batchVal = (batchPos) ? loops[batchPos.value()] : 0;
+  }
+  auto sizeBatch = IntegerAttr::get(integer64, batchVal);
 
-  xsmm::BrgemmInfo info{loops[m], loops[n], loopsK,  batchVal, *lda,
-                        *ldb,     *ldc,     strideA, strideB};
+  // TODO: reinstate support for multiple reduction dimensions
+  // auto loopsK = 1;
+  // for (auto posK : posKs)
+  //   loopsK *= loops[posK];
+
+  xsmm::BrgemmInfo info{sizeM, sizeN, sizeK,   sizeBatch, *lda,
+                        *ldb,  *ldc,  strideA, strideB};
   return info;
 }
 
@@ -307,16 +350,17 @@ FailureOr<BrgemmInfo> isMappableToBrgemm(PatternRewriter &rewriter,
                                "\n");
     return failure();
   }
-  unsigned m = contractionDims->m.back();
-  unsigned n = contractionDims->n.back();
-  SmallVector<unsigned, 2> kVector;
-  std::optional<unsigned> batch;
-  if (contractionDims->k.size() >= 2) {
+  unsigned posM = contractionDims->m.back();
+  unsigned posN = contractionDims->n.back();
+  SmallVector<unsigned, 2> posKs;
+  std::optional<unsigned> batchPos; // NB: Never written to...
+  if (contractionDims->k.size() >=
+      2) { // NB: ignores first found K dim ... why?
     for (size_t i = 1; i < contractionDims->k.size(); i++)
-      kVector.push_back(contractionDims->k[i]);
+      posKs.push_back(contractionDims->k[i]);
   } else {
     for (size_t i = 0; i < contractionDims->k.size(); i++)
-      kVector.push_back(contractionDims->k[i]);
+      posKs.push_back(contractionDims->k[i]);
   }
 
   LLVM_DEBUG(llvm::dbgs() << "[isMappableToBrge"
@@ -325,20 +369,20 @@ FailureOr<BrgemmInfo> isMappableToBrgemm(PatternRewriter &rewriter,
                           << "\n");
   LLVM_DEBUG(llvm::dbgs() << "[isMappableToBrge"
                              "mm] m: "
-                          << m << "\n");
+                          << posM << "\n");
   LLVM_DEBUG(llvm::dbgs() << "[isMappableToBrge"
                              "mm] n: "
-                          << n << "\n");
-  if (batch)
+                          << posN << "\n");
+  if (batchPos) // NB: always false
     LLVM_DEBUG(llvm::dbgs() << "[isMappableToBr"
                                "gemm] batch: "
-                            << batch << "\n");
+                            << batchPos << "\n");
   else
     LLVM_DEBUG(llvm::dbgs() << "[isMappableToBr"
                                "gemm] no batch "
                                "dim\n");
-  auto retval = checkAccess(rewriter, contractOp, m, n, kVector, batch, inputs,
-                            indexingMap);
+  auto retval = checkAccess(rewriter, contractOp, posM, posN, posKs, batchPos,
+                            inputs, indexingMap);
   if (failed(retval)) {
     LLVM_DEBUG(llvm::dbgs() << "Failed to check access\n");
     return failure();
@@ -711,6 +755,7 @@ FailureOr<vector::ContractionOp>
 makeMinorDimensionsInnerMost(RewriterBase &rewriter,
                              vector::ContractionOp contractOp, unsigned m,
                              unsigned n, unsigned k, DataTypeAttr type) {
+  MLIRContext *ctx = rewriter.getContext();
   OpOperand *operandA = &contractOp->getOpOperand(0);
   OpOperand *operandB = &contractOp->getOpOperand(1);
   OpOperand &operandC = contractOp->getOpOperand(2);
@@ -720,9 +765,9 @@ makeMinorDimensionsInnerMost(RewriterBase &rewriter,
   // k is expected to be the innermost for A
   // n is expected to be the innermost for B
   auto minorKInCodomainOpA = xsmm::utils::getPosInCodomain(
-      k, operandA->get(), contractOp, contractOp.getIndexingMapsArray()[0]);
+      k, contractOp.getIndexingMapsArray()[0], ctx);
   auto minorMInCodomainOpA = xsmm::utils::getPosInCodomain(
-      m, operandA->get(), contractOp, contractOp.getIndexingMapsArray()[0]);
+      m, contractOp.getIndexingMapsArray()[0], ctx);
   if (!minorKInCodomainOpA || !minorMInCodomainOpA) {
     LLVM_DEBUG(
         llvm::dbgs()
@@ -731,9 +776,9 @@ makeMinorDimensionsInnerMost(RewriterBase &rewriter,
   }
 
   auto minorNInCodomainOpB = xsmm::utils::getPosInCodomain(
-      n, operandB->get(), contractOp, contractOp.getIndexingMapsArray()[1]);
+      n, contractOp.getIndexingMapsArray()[1], ctx);
   auto minorKInCodomainOpB = xsmm::utils::getPosInCodomain(
-      k, operandB->get(), contractOp, contractOp.getIndexingMapsArray()[1]);
+      k, contractOp.getIndexingMapsArray()[1], ctx);
   if (!minorNInCodomainOpB || !minorKInCodomainOpB) {
     LLVM_DEBUG(
         llvm::dbgs()
@@ -742,9 +787,9 @@ makeMinorDimensionsInnerMost(RewriterBase &rewriter,
   }
 
   auto minorNInCodomainOpC = xsmm::utils::getPosInCodomain(
-      n, operandC.get(), contractOp, contractOp.getIndexingMapsArray()[2]);
+      n, contractOp.getIndexingMapsArray()[2], ctx);
   auto minorMInCodomainOpC = xsmm::utils::getPosInCodomain(
-      m, operandC.get(), contractOp, contractOp.getIndexingMapsArray()[2]);
+      m, contractOp.getIndexingMapsArray()[2], ctx);
   if (!minorNInCodomainOpC || !minorMInCodomainOpC) {
     LLVM_DEBUG(
         llvm::dbgs()
@@ -1009,15 +1054,15 @@ std::pair<Operation *, Operation *>
 buildBrgemmCalls(PatternRewriter &rewriter, Operation *op, ValueRange inputs,
                  xsmm::BrgemmInfo brgemmInfo, SmallVector<Attribute> flags) {
   assert(inputs.size() == 3 && "Expects three inputs for BRGEMM call");
-  auto m = brgemmInfo.m;
-  auto n = brgemmInfo.n;
-  auto k = brgemmInfo.k;
-  auto batch = brgemmInfo.batch;
-  int64_t lda = brgemmInfo.lda;
-  int64_t ldb = brgemmInfo.ldb;
-  int64_t ldc = brgemmInfo.ldc;
-  int64_t strideA = brgemmInfo.strideA;
-  int64_t strideB = brgemmInfo.strideB;
+  OpFoldResult m = brgemmInfo.m;
+  OpFoldResult n = brgemmInfo.n;
+  OpFoldResult k = brgemmInfo.k;
+  OpFoldResult batch = brgemmInfo.batch;
+  OpFoldResult lda = brgemmInfo.lda;
+  OpFoldResult ldb = brgemmInfo.ldb;
+  OpFoldResult ldc = brgemmInfo.ldc;
+  OpFoldResult strideA = brgemmInfo.strideA;
+  OpFoldResult strideB = brgemmInfo.strideB;
   auto loc = op->getLoc();
   auto dtype = xsmm::utils::getDataType(rewriter, inputs[0].getType());
   IntegerType integer64 = IntegerType::get(rewriter.getContext(), 64);
@@ -1033,18 +1078,20 @@ buildBrgemmCalls(PatternRewriter &rewriter, Operation *op, ValueRange inputs,
   std::string dispatchName = "xsmm_gemm_dispatch";
   std::string invokeName = "xsmm_gemm_invoke";
 
-  if (batch != 0) {
+  Attribute batchAttr = dyn_cast<Attribute>(batch);
+  IntegerAttr batchIntAttr = dyn_cast_if_present<IntegerAttr>(batchAttr);
+  if (batchIntAttr && batchIntAttr.getValue() != 0) {
     dispatchName = "xsmm_brgemm_dispatch";
     invokeName = "xsmm_brgemm_invoke";
   }
 
-  auto dims = SmallVector<int64_t>{m, n, k, lda, ldb, ldc};
-  if (batch != 0) {
+  auto dims = SmallVector<OpFoldResult>{m, n, k, lda, ldb, ldc};
+  if (batchIntAttr && batchIntAttr.getValue() != 0) {
     dims.append({strideA, strideB});
   }
   for (size_t idx = 0; idx < dims.size(); idx++) {
-    dispatchOperands.push_back(rewriter.create<arith::ConstantOp>(
-        loc, integer64, rewriter.getIntegerAttr(integer64, dims[idx])));
+    dispatchOperands.push_back(
+        mlir::getValueOrCreateConstantIntOp(rewriter, loc, dims[idx]));
     dispatchOperandTypes.push_back(integer64);
   }
   // Dispatch the flags. Pass to the library the already ored-flag to
@@ -1064,9 +1111,9 @@ buildBrgemmCalls(PatternRewriter &rewriter, Operation *op, ValueRange inputs,
   for (auto operand : inputs) {
     operandRange.push_back(operand);
   }
-  if (batch != 0) {
-    Value batchDim = rewriter.create<arith::ConstantOp>(
-        loc, integer64, rewriter.getIntegerAttr(integer64, batch));
+  if (auto batchAttr =
+          dyn_cast<Attribute>(batch) != IntegerAttr::get(integer64, 0)) {
+    Value batchDim = mlir::getValueOrCreateConstantIntOp(rewriter, loc, batch);
     operandRange.push_back(batchDim);
   }
   auto invokeCall = xsmm::utils::buildInvokeCall(
