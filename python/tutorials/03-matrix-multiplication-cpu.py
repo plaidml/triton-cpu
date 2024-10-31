@@ -310,6 +310,9 @@ def matmul(a: torch.Tensor, b: torch.Tensor, c: torch.Tensor):
 
     k_block = BLOCK_SIZE_K
     if DYNAMIC_K_BLOCK:
+        # Currently, the maximum dynamic block size is capped somewhat arbitrarily.
+        # Ideally, tradeoffs between amount of padding, block size, and associated costs
+        # should be considered.
         k_block = min(triton.next_power_of_2(K), 1024)
 
     if K_DIM_PADDING or DYNAMIC_K_BLOCK:
