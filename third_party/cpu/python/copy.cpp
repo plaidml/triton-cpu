@@ -3,8 +3,6 @@
 #include "libxsmm.h"
 #include <omp.h>
 
-#include <iostream>
-
 bool fastCopy2D(torch::Tensor input, torch::Tensor output) {
   auto inSizes = input.sizes();
   auto outSizes = output.sizes();
@@ -29,11 +27,14 @@ bool fastCopy2D(torch::Tensor input, torch::Tensor output) {
   libxsmm_meltwfunction_unary identityFn = libxsmm_dispatch_meltw_unary(
       LIBXSMM_MELTW_TYPE_UNARY_IDENTITY, shape, flags);
 
+  void *baseIn = input.data_ptr();
+  void *outIn = output.data_ptr();
+
 #pragma omp parallel for
   for (int i = 0; i < inSizes[0]; ++i) {
     libxsmm_meltw_unary_param param;
-    param.in.primary = input[i].data_ptr();
-    param.out.primary = output[i].data_ptr();
+    param.in.primary = baseIn + i * inSizes[1] * byteSize;
+    param.out.primary = outIn + i * outSizes[1] * byteSize;
     identityFn(&param);
   }
 
