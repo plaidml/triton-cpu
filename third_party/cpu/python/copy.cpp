@@ -16,9 +16,8 @@ bool fastCopy2D(torch::Tensor &input, torch::Tensor &output) {
       byteSize == 4 ? LIBXSMM_DATATYPE_F32 : LIBXSMM_DATATYPE_BF16;
   libxsmm_meltw_unary_shape shape;
   // Fliped to libxsmm's column-major convention.
-  const int numRows = 1;
   shape.m = inSizes[1];
-  shape.n = numRows;
+  shape.n = 1;
   shape.ldi = inSizes[1];
   shape.ldo = outSizes[1];
   shape.in0_type = dtype;
@@ -32,10 +31,10 @@ bool fastCopy2D(torch::Tensor &input, torch::Tensor &output) {
   void *outIn = output.data_ptr();
 
 #pragma omp parallel for
-  for (int i = 0; i < inSizes[0] / numRows; ++i) {
+  for (int i = 0; i < inSizes[0]; ++i) {
     libxsmm_meltw_unary_param param;
-    param.in.primary = baseIn + i * numRows * inSizes[1] * byteSize;
-    param.out.primary = outIn + i * numRows * outSizes[1] * byteSize;
+    param.in.primary = baseIn + i * inSizes[1] * byteSize;
+    param.out.primary = outIn + i * outSizes[1] * byteSize;
     identityFn(&param);
   }
 
