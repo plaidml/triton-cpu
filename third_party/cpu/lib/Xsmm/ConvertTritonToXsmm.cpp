@@ -282,22 +282,22 @@ private:
 
 // Collapse whole reduction loop with a GEMM into equivalent BRGEMM operation.
 // Rewrites the following pattern:
-//   %0 = tt.make_tensor_ptr %base_ptr0 : tensor<MxK>
-//   %1 = tt.make_tensor_ptr %base_ptr1 : tensor<KxN>
-//   %2:3 = scf.for %arg3 = %lb to %ub step %step
+//   %0 = tt.make_tensor_ptr %base_ptr0 : tensor<M x K>
+//   %1 = tt.make_tensor_ptr %base_ptr1 : tensor<K x N>
+//   %res:3 = scf.for %arg3 = %lb to %ub step %step
 //       iter_args(%acc = %init_val, %ptr_A = %0, %ptr_B = %1)
 //     %A = tt.load %ptr_A
 //     %B = tt.load %ptr_B
-//     %res = tt.dot %A, %B, %acc
+//     %dot = tt.dot %A, %B, %acc
 //     %ptr_A_next = tt.advance %ptr_A, [0, %stepK]
 //     %ptr_B_next = tt.advance %ptr_B, [%stepK, %0]
-//     scf.yield %res, %ptr_A_next, %ptr_V_next
+//     scf.yield %dot, %ptr_A_next, %ptr_B_next
 // into:
 //   %A = tt.make_tensor_ptr %base_ptr0 : tensor<M x TILES x k>
 //   %B = tt.make_tensor_ptr %base_ptr1 : tensor<TILES x k x N>
 //   %res0 = BRGEMM %A, %B, %init_val
-//   %res1 = tt.advance %A, [0, ((%ub - %lb) / %step)]
-//   %res2 = tt.advance %B, [((%ub - %lb) / %step), 0]
+//   %res1 = tt.advance %A, [0, ((%ub - %lb) / %step) * %stepK]
+//   %res2 = tt.advance %B, [((%ub - %lb) / %step) * %stepK, 0]
 struct DotReductionLoopToBrgemm : public OpRewritePattern<triton::DotOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -351,6 +351,9 @@ struct DotReductionLoopToBrgemm : public OpRewritePattern<triton::DotOp> {
     auto loadMatB = dotOp.getB().getDefiningOp<triton::LoadOp>();
     if (!loadMatA || !loadMatB)
       return rewriter.notifyMatchFailure(dotOp, "expect GEMM input loads");
+    if (!loadMatA->hasOneUse() || !loadMatB->hasOneUse())
+      return rewriter.notifyMatchFailure(dotOp,
+                                         "Input loads subgraph does not match");
 
     // Constrain input pointers to the following subgraph:
     //   iter_arg -> (load, increment) -> yield
@@ -385,6 +388,9 @@ struct DotReductionLoopToBrgemm : public OpRewritePattern<triton::DotOp> {
                             .getDefiningOp<triton::AdvanceOp>();
     if (!lhsAdvanceOp || !rhsAdvanceOp)
       return rewriter.notifyMatchFailure(dotOp, "expected ptr advance");
+    if (!lhsAdvanceOp->hasOneUse() || !rhsAdvanceOp->hasOneUse())
+      return rewriter.notifyMatchFailure(
+          dotOp, "Ptr increment subgraph does not match");
 
     auto resShape = res.getType().getShape();
     auto lhsShape = dotOp.getA().getType().getShape();
