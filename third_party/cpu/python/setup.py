@@ -9,7 +9,7 @@ print(f'LIBXSMM lib location: {xsmm_lib}')
 
 setup(name='xsmm_py',
       ext_modules=[
-          cpp_extension.CppExtension('xsmm_py', ['copy.cpp'],
+          cpp_extension.CppExtension('xsmm_py', ['xsmm_utils.cpp'],
           include_dirs=[
               f'{xsmm_root}/include',
               f'{xsmm_root}/src/template'
