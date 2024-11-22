@@ -4,7 +4,6 @@
 HERE=$PWD
 
 echo "===================================== Configuring Checkout"
-git checkout dev-cpu-v2
 git submodule init
 git submodule update
 
