@@ -73,7 +73,7 @@ fi
 
 # Uses the libxsmm built in the repo
 export XSMM_ROOT_DIR=$(find $SCRIPT_DIR/../build/ -type d -name xsmm-src | grep -v third_party)
-export XSMM_LIB_DIR=../triton/_C/
+export XSMM_LIB_DIR=$SCRIPT_DIR/../triton/_C/
 export LD_LIBRARY_PATH=$XSMM_LIB_DIR:$LD_LIBRARY_PATH
 export LD_PRELOAD=/lib64/libomp.so:$LD_PRELOAD
 export TRITON_CPU_MAX_THREADS=${numthreads}
