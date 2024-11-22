@@ -18,3 +18,5 @@ for datatype in f32 bf16; do
     done
   done
 done
+
+conda deactivate
