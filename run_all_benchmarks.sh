@@ -2,7 +2,7 @@
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
-source ../miniforge/bin/activate
+source ../miniforge/bin/activate triton
 
 for datatype in f32 bf16; do
   for num_threads in 1 $(nproc); do
