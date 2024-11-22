@@ -31,6 +31,7 @@ fi
 
 echo "===================================== Building LLVM"
 if [ ! -d $HERE/../llvm-project ]; then
+  pushd ./../
   git clone https://github.com/llvm/llvm-project.git
   cd llvm-project
   git checkout `cat ${HERE}/cmake/llvm-hash.txt`
@@ -38,6 +39,7 @@ if [ ! -d $HERE/../llvm-project ]; then
   pushd build
   cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_ASSERTIONS=True -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DLLVM_USE_LINKER=lld -DLLVM_ENABLE_PROJECTS="mlir;llvm" -DLLVM_TARGETS_TO_BUILD="host;NVPTX;AMDGPU" ../llvm
   ninja
+  popd
   popd
 else
   echo "LLVM already built, skipping."
