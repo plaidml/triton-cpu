@@ -22,16 +22,9 @@ if [ $? != 0 ]; then
   exit 1
 fi
 
-echo "===================================== Unit Tests"
-# This crashes if you don't have an NVidia GPU, but it's fine, we don't care
-python3 -m pytest python/test/unit
-#if [ $? != 0 ]; then
-#  exit 1
-#fi
-
 echo "===================================== Setting up LIBXSMM for paddeing"
-export XSMM_ROOT_DIR=$PWD/../libxsmm
-export XSMM_LIB_DIR=$PWD/../libxsmm/lib
+export XSMM_ROOT_DIR=$(find python/build/ -type d -name xsmm-src | grep -v third_party)
+export XSMM_LIB_DIR=$XSMM_ROOT_DIR/lib
 cd third_party/cpu/python
 python setup.py install
 cd ../../../

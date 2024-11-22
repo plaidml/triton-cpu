@@ -33,12 +33,6 @@ cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_ASSERTIONS=True -DCMAKE_
 ninja
 cd ./../../
 
-echo "===================================== Building libxsmm"
-git clone https://github.com/libxsmm/libxsmm
-cd libxsmm
-make realclean && make CC=clang CXX=clang++ FC= STATIC=0 -j
-cd ./../
-
 cd $HERE
 
 conda deactivate

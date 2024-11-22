@@ -47,7 +47,10 @@ elif [ "$config" = "xsmm-pad-k" ]; then
   else
     export USE_BLOCK_POINTERS=1
   fi
-  echo "NOTE: requires that \$XSMM_LIB_DIR is in LD_LIBRARY_PATH"
+  if [ ! $XSMM_LIB_DIR ]; then
+    echo "requires \$XSMM_LIB_DIR"
+    exit
+  fi
   export XSMM_PAD=1
   export K_DIM_PADDING=1
   export CACHE_PADDING=1
@@ -59,7 +62,10 @@ elif [ "$config" = "xsmm-loop-collapse-pad-b" ]; then
   else
     export USE_BLOCK_POINTERS=1
   fi
-  echo "NOTE: requires that \$XSMM_LIB_DIR is in LD_LIBRARY_PATH"
+  if [ ! $XSMM_LIB_DIR ]; then
+    echo "requires \$XSMM_LIB_DIR"
+    exit
+  fi
   export XSMM_PAD=1
   export PAD_B_ONLY=1
   export BLOCK_SIZE_K=32
@@ -73,12 +79,14 @@ else
   exit 1
 fi
 
-export LD_LIBRARY_PATH=$PWD/../libxsmm/lib:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=$XSMM_LIB_DIR:$LD_LIBRARY_PATH
 export LD_PRELOAD=/lib64/libomp.so:$LD_PRELOAD
 export TRITON_CPU_MAX_THREADS=${numthreads}
 export OMP_NUM_THREADS=${numthreads}
+# Hyper-Threading
 export KMP_AFFINITY=granularity=fine,compact,1,0
+# No Hyper-Threading
+#export KMP_AFFINITY=granularity=core,compact,0,0
 
-python $SCRIPT_DIR/03-matrix-multiplication-cpu.py
-
+python $SCRIPT_DIR/../python/tutorials/03-matrix-multiplication-cpu.py
 
