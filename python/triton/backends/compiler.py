@@ -5,8 +5,8 @@ import subprocess
 import sysconfig
 
 from abc import ABCMeta, abstractmethod
-from dataclasses import dataclass
-from typing import Dict, List, Tuple, Union
+from dataclasses import dataclass, field
+from typing import Dict, List, Tuple, Union, Set
 from types import ModuleType
 
 # Table that associates strings to AttrsDescriptor (sub)classes.
@@ -23,7 +23,7 @@ def register_descriptor(cls):
     return cls
 
 
-@register_descriptor
+@dataclass
 class AttrsDescriptor:
     """
     This class handles compile-time properties for specific function parameters.
@@ -52,7 +52,10 @@ class AttrsDescriptor:
     `constant_properties`: a set containing the properties that can be used to determine if a parameter is constant
 
     """
-    __slots__ = ('divisibility_16', 'equal_to_1', 'arg_properties', 'property_values', 'constant_properties')
+    #__slots__ = ('divisibility_16', 'equal_to_1', 'arg_properties', 'property_values', 'constant_properties')
+    arg_properties: Dict = field(default_factory=dict)
+    property_values: Dict = field(default_factory=dict)
+    constant_properties: Set = field(default_factory=set)
 
     def __init__(self, params=None, values=None):
         """
