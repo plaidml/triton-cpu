@@ -524,10 +524,10 @@ def benchmark(M, N, K, provider):
 
     quantiles = [0.5, 0.2, 0.8]
     if provider == 'torch-cpu-native':
-        ms, min_ms, max_ms = triton.testing.do_bench(lambda: torch.matmul(a, b, out=c), quantiles=quantiles)
+        ms, min_ms, max_ms = triton.testing.do_bench(lambda: torch.matmul(a, b, out=c), rep=1000, quantiles=quantiles)
     elif provider == 'torch-cpu-compile':
         compiled = torch.compile(torch.matmul)
-        ms, min_ms, max_ms = triton.testing.do_bench(lambda: compiled(a, b, out=c), quantiles=quantiles)
+        ms, min_ms, max_ms = triton.testing.do_bench(lambda: compiled(a, b, out=c), rep=1000, quantiles=quantiles)
     elif provider in {'triton-cpu', 'triton-xsmm'}:
         ms, min_ms, max_ms = triton.testing.do_bench(lambda: matmul(triton_a, triton_b, triton_c, m_dim, n_dim, k_dim, k_block), rep=1000, quantiles=quantiles)
     else:
