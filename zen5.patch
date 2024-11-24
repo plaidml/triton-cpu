@@ -1,0 +1,31 @@
+diff --git a/python/src/llvm.cc b/python/src/llvm.cc
+index 70e36449..a786a96a 100644
+--- a/python/src/llvm.cc
++++ b/python/src/llvm.cc
+@@ -410,7 +410,7 @@ void init_triton_llvm(py::module &&m) {
+     auto target =
+         llvm::TargetRegistry::lookupTarget(mod->getTargetTriple(), error);
+     std::unique_ptr<llvm::TargetMachine> machine{target->createTargetMachine(
+-        mod->getTargetTriple(), llvm::sys::getHostCPUName(), "", {},
++        mod->getTargetTriple(), "znver4", "", {},
+         llvm::Reloc::PIC_)};
+     mod->setDataLayout(machine->createDataLayout());
+   });
+@@ -437,7 +437,7 @@ void init_triton_llvm(py::module &&m) {
+           }
+           res =
+               translateLLVMIRToASM(*module, llvm::sys::getDefaultTargetTriple(),
+-                                   llvm::sys::getHostCPUName().str(), "", {},
++                                   "znver4", "", {},
+                                    enable_fp_fusion, false, enable_fast_math);
+         }
+         return py::str(res);
+@@ -553,7 +553,7 @@ void init_triton_llvm(py::module &&m) {
+ 
+   m.def("get_cpu_tripple", []() { return llvm::sys::getProcessTriple(); });
+ 
+-  m.def("get_cpu_name", []() { return llvm::sys::getHostCPUName().str(); });
++  m.def("get_cpu_name", []() { return "znver4"; });
+ 
+   m.def("get_cpu_features", []() {
+     auto features = llvm::sys::getHostCPUFeatures();
