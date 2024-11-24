@@ -77,10 +77,11 @@ export LD_LIBRARY_PATH=$XSMM_LIB_DIR:$LD_LIBRARY_PATH
 export LD_PRELOAD=/lib64/libomp.so:$LD_PRELOAD
 export TRITON_CPU_MAX_THREADS=${numthreads}
 export OMP_NUM_THREADS=${numthreads}
-# Hyper-Threading
-export KMP_AFFINITY=granularity=fine,compact,1,0
-# No Hyper-Threading
-#export KMP_AFFINITY=granularity=core,compact,0,0
+
+# Thread affinity changes with hyper-threading
+THREADS_PER_CORE=$(lscpu | grep --color=never "Thread.*core" | tee - | grep -o "[0-9]\+")
+SKIP=$((THREADS_PER_CORE-1)) # 0 for no HT, 1 for 2, 3 for 4, etc.
+export KMP_AFFINITY=granularity=fine,compact,$SKIP,0
 
 python $SCRIPT_DIR/03-matrix-multiplication-cpu.py
 
