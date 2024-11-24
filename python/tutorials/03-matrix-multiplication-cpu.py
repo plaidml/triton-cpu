@@ -529,16 +529,16 @@ def benchmark(M, N, K, provider):
         ms, min_ms, max_ms = triton.testing.do_bench(lambda: matmul(triton_a, triton_b, triton_c, m_dim, n_dim, k_dim, k_block), quantiles=quantiles,
                                                      device_type=device)
     elif provider == 'torch-cpu-native':
-        ms, min_ms, max_ms = triton.testing.do_bench(lambda: torch.matmul(a, b, out=c), quantiles=quantiles,
+        ms, min_ms, max_ms = triton.testing.do_bench(lambda: torch.matmul(a, b, out=c), rep=1000, quantiles=quantiles,
                                                      device_type=device)
     elif provider == 'torch-cpu-compile':
         compiled = torch.compile(torch.matmul)
-        ms, min_ms, max_ms = triton.testing.do_bench(lambda: compiled(a, b, out=c), quantiles=quantiles,
+        ms, min_ms, max_ms = triton.testing.do_bench(lambda: compiled(a, b, out=c), rep=1000, quantiles=quantiles,
                                                      device_type=device)
     elif provider == 'triton-cpu-single' or provider == 'triton-cpu-single-v2':
-        ms, min_ms, max_ms = triton.testing.do_bench(lambda: matmul(triton_a, triton_b, triton_c, m_dim, n_dim, k_dim, k_block), quantiles=quantiles, device_type=device)
+        ms, min_ms, max_ms = triton.testing.do_bench(lambda: matmul(triton_a, triton_b, triton_c, m_dim, n_dim, k_dim, k_block), rep=1000, quantiles=quantiles, device_type=device)
     elif provider == 'triton-cpu' or provider == 'triton-cpu-v2':
-        ms, min_ms, max_ms = triton.testing.do_bench(lambda: matmul(triton_a, triton_b, triton_c, m_dim, n_dim, k_dim, k_block), quantiles=quantiles, device_type=device)
+        ms, min_ms, max_ms = triton.testing.do_bench(lambda: matmul(triton_a, triton_b, triton_c, m_dim, n_dim, k_dim, k_block), rep=1000, quantiles=quantiles, device_type=device)
     perf = lambda ms: 2 * M * N * K * 1e-9 / (ms * 1e-3)
     return perf(ms), perf(max_ms), perf(min_ms)
 
