@@ -45,7 +45,7 @@ RUN=time
 
 # Single-threaded just needs to run once for Torch baseline, because every multi-threaded run also runs single threaded
 echo -e "\nSingle-Threaded Baseline"
-$RUN $SCRIPT_DIR/python/tutorials/03-matrix-multiplication-cpu.sh xsmm-scalar $THREADS --datatype $DATATYPE
+$RUN $SCRIPT_DIR/python/tutorials/03-matrix-multiplication-cpu.sh xsmm-scalar 1 --datatype $DATATYPE
 
 # Multi-threaded has two "flavours": baseline and XSMM
 echo -e "\nMulti-Threaded Baseline"
