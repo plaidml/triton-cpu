@@ -45,13 +45,13 @@ RUN=time
 
 # Single-threaded just needs to run once for Torch baseline, because every multi-threaded run also runs single threaded
 echo -e "\nSingle-Threaded Baseline"
-$RUN $SCRIPT_DIR/python/tutorials/03-matrix-multiplication-cpu.sh xsmm-scalar $THREADS --DATATYPE $DATATYPE
+$RUN $SCRIPT_DIR/python/tutorials/03-matrix-multiplication-cpu.sh xsmm-scalar $THREADS --datatype $DATATYPE
 
 # Multi-threaded has two "flavours": baseline and XSMM
 echo -e "\nMulti-Threaded Baseline"
 for benchmark in xsmm-scalar xsmm-block; do
   echo -e "\nRUN: $benchmark | threads $THREADS | type $DATATYPE"
-  $RUN $SCRIPT_DIR/python/tutorials/03-matrix-multiplication-cpu.sh $benchmark $THREADS --DATATYPE $DATATYPE $external_pad
+  $RUN $SCRIPT_DIR/python/tutorials/03-matrix-multiplication-cpu.sh $benchmark $THREADS --datatype $DATATYPE $external_pad
 done
 
 # This should only run on a branch where the XSMM bridge is properly installed
@@ -60,7 +60,7 @@ if [ $BASELINE == 0 ]; then
   for benchmark in xsmm-pad-k xsmm-loop-collapse-pad-b; do
     for external_pad in "" "--external-pad"; do
       echo -e "\nRUN: $benchmark | threads $THREADS | type $DATATYPE | $external_pad"
-      $RUN $SCRIPT_DIR/python/tutorials/03-matrix-multiplication-cpu.sh $benchmark $THREADS --DATATYPE $DATATYPE $external_pad
+      $RUN $SCRIPT_DIR/python/tutorials/03-matrix-multiplication-cpu.sh $benchmark $THREADS --datatype $DATATYPE $external_pad
     done
   done
 fi
