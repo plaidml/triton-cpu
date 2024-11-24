@@ -434,22 +434,24 @@ else:
 # We can now compare the performance of our kernel against that of Pytorch. Here we focus on square matrices,
 # but feel free to arrange this script as you wish to benchmark any other matrix shape.
 
-# LINE_VALS = [
-#     'triton-cpu-single', 'triton-cpu', 'triton-cpu-single-v2', 'triton-cpu-v2', 'torch-cpu-native', 'torch-cpu-compile']
-# LINE_NAMES = ['TritonCPU 1', 'TritonCPU', 'TritonCPU 1-v2', 'TritonCPU-v2', 'TorchCPU (native)', 'TorchCPU (compile)']
-# LINE_STYLES = [('blue', '--'), ('blue', '-'), ('red', '--'), ('red', '-'), ('green', '--'), ('green', '-')]
-
-# Disabled v2 benchmarking.
-# v2 lowering effectively fails for tiles larger than 16 and throws errors on bf16 data type.
-LINE_VALS = [
-    'triton-cpu-single', 'triton-cpu', 'torch-cpu-native', 'torch-cpu-compile']
-LINE_NAMES = ['TritonCPU 1', 'TritonCPU', 'TorchCPU (native)', 'TorchCPU (compile)']
-LINE_STYLES = [('blue', '--'), ('blue', '-'), ('green', '--'), ('green', '-')]
-if DATA_TYPE == torch.float8_e5m2:
+BENCHMARK_BACKEND = os.getenv("BENCHMARK_BACKEND")
+if BENCHMARK_BACKEND:
+    # if BENCHMARK_BACKEND is provided we run the benchmark on just one config on just one backend
+    assert(BENCHMARK_BACKEND in {"triton-cpu", "triton-xsmm", "torch-cpu-native", "torch-cpu-compile"})
+    LINE_VALS = [BENCHMARK_BACKEND]
+    LINE_NAMES = [BENCHMARK_BACKEND]
+    LINE_STYLES = [('blue', '-')]
+else:
+    # if BENCHMARK_BACKEND is not provided stick with the default of running multiple backends
     LINE_VALS = [
-        'triton-cpu-single', 'triton-cpu']
-    LINE_NAMES = ['TritonCPU 1', 'TritonCPU']
-    LINE_STYLES = [('blue', '--'), ('blue', '-')]
+        'triton-cpu-single', 'triton-cpu', 'torch-cpu-native', 'torch-cpu-compile']
+    LINE_NAMES = ['TritonCPU 1', 'TritonCPU', 'TorchCPU (native)', 'TorchCPU (compile)']
+    LINE_STYLES = [('blue', '--'), ('blue', '-'), ('green', '--'), ('green', '-')]
+    if DATA_TYPE == torch.float8_e5m2:
+        LINE_VALS = [
+            'triton-cpu-single', 'triton-cpu']
+        LINE_NAMES = ['TritonCPU 1', 'TritonCPU']
+        LINE_STYLES = [('blue', '--'), ('blue', '-')]
 
 if USE_GPU and triton.runtime.driver.get_active_gpus():
     triton.runtime.driver.set_active_to_gpu()
@@ -486,7 +488,8 @@ STR_TYPE = str(DATA_TYPE).rsplit('.')[-1]
 @triton.testing.perf_report(
     triton.testing.Benchmark(
         x_names=["M", "N", "K"],  # Argument names to use as an x-axis for the plot
-        x_vals=[128 * i for i in range(2, 33)],  # Different possible values for `x_name`
+        #x_vals=[128 * i for i in range(2, 33)],  # Different possible values for `x_name`
+        x_vals=[128 * i for i in range(20, 21)],  # Different possible values for `x_name`
         line_arg='provider',  # Argument name whose value corresponds to a different line in the plot.
         line_vals=LINE_VALS,  # Possible values for `line_arg`.
         line_names=LINE_NAMES,  # Label name for the lines.
@@ -498,8 +501,7 @@ STR_TYPE = str(DATA_TYPE).rsplit('.')[-1]
         args={},  # Values for function arguments not in `x_names` and `y_name`.
     ))
 def benchmark(M, N, K, provider):
-
-    device = 'cpu' if 'cpu' in provider else 'cuda'
+    device = 'cpu'
     a = torch.randn((M, K), device=device).type(DATA_TYPE)
     b = torch.randn((K, N), device=device).type(DATA_TYPE)
 
@@ -521,19 +523,15 @@ def benchmark(M, N, K, provider):
         triton_a, triton_b, triton_c, m_dim, n_dim, k_dim, k_block = matmul_preprocess_input(a, b, c)
 
     quantiles = [0.5, 0.2, 0.8]
-    if provider == 'torch-gpu':
-        ms, min_ms, max_ms = triton.testing.do_bench(lambda: torch.matmul(a, b), quantiles=quantiles)
-    elif provider == 'triton-gpu':
-        ms, min_ms, max_ms = triton.testing.do_bench(lambda: matmul(triton_a, triton_b, triton_c, m_dim, n_dim, k_dim, k_block), quantiles=quantiles)
-    elif provider == 'torch-cpu-native':
+    if provider == 'torch-cpu-native':
         ms, min_ms, max_ms = triton.testing.do_bench(lambda: torch.matmul(a, b, out=c), quantiles=quantiles)
     elif provider == 'torch-cpu-compile':
         compiled = torch.compile(torch.matmul)
         ms, min_ms, max_ms = triton.testing.do_bench(lambda: compiled(a, b, out=c), quantiles=quantiles)
-    elif provider == 'triton-cpu-single':
-        ms, min_ms, max_ms = triton.testing.do_bench(lambda: matmul(triton_a, triton_b, triton_c, m_dim, n_dim, k_dim, k_block, num_threads=1), quantiles=quantiles)
-    elif provider == 'triton-cpu' or provider == 'triton-cpu-v2':
-        ms, min_ms, max_ms = triton.testing.do_bench(lambda: matmul(triton_a, triton_b, triton_c, m_dim, n_dim, k_dim, k_block), quantiles=quantiles)
+    elif provider in {'triton-cpu', 'triton-xsmm'}:
+        ms, min_ms, max_ms = triton.testing.do_bench(lambda: matmul(triton_a, triton_b, triton_c, m_dim, n_dim, k_dim, k_block), rep=1000, quantiles=quantiles)
+    else:
+        assert(False and "unknown provider")
     perf = lambda ms: 2 * M * N * K * 1e-9 / (ms * 1e-3)
     return perf(ms), perf(max_ms), perf(min_ms)
 
