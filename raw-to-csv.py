@@ -121,25 +121,26 @@ sys     0m8.617s"""
 def convert_all(in_file):
   metadata = None
   csv_lines = []
-  count_new_line_sep = 0
   for line in in_file:
-    if line.startswith('sys '):
-      yield (csv_lines, metadata)
-      metadata = None
-      csv_lines = []
-    if line in {"", "\n"}:
-      count_new_line_sep += 1
-      if count_new_line_sep >= 2:
+    if line.startswith("RUN"):
+      # If this is not the first RUN line, yield the previous bundle
+      if metadata:
         yield (csv_lines, metadata)
         metadata = None
         csv_lines = []
-        count_new_line_sep = 0
-    if line.startswith("RUN"):
+
+      # Match a new bundle
       match = re.match(r"RUN: ([\w-]+) \| threads (\d+) \| type (\w+) ?\|? ?(--external-pad)?.*", line)
       metadata = {'config': match[1], 'threads': match[2], 'type': match[3], 'line': line}
+
     if m := re.match(r"\d+ +(\d.*)", line): # data row
+      # Match the numbers inside the bundle
       csv_line = re.subn("[, ]+", ",", m[1])
       csv_lines += [csv_line[0]+"\n"]
+
+  # The last bundle gets yielded here
+  if metadata:
+    yield (csv_lines, metadata)
 
 
 if __name__ == "__main__":
@@ -148,9 +149,6 @@ if __name__ == "__main__":
   else:
     in_file = sys.stdin if (len(sys.argv) < 2 or sys.argv[1] == '-') else open(sys.argv[1])
 
-  line1 = in_file.readline()
-  line2 = in_file.readline()
-  assert(line1 == "\n" and line2 == "\n")
   converted = convert_all(in_file)
 
   for csv_lines, metadata in converted:
