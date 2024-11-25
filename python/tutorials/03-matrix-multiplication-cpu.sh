@@ -44,20 +44,24 @@ if [ "$config" = "baseline" ]; then
     echo "ERROR: baseline config but backend is not torch-cpu-native or torch-cpu-compile"; exit 1
   fi
 elif [ "$config" = "baseline-scalar" ]; then
+  export PREPROCESS_EXTERNAL=1 # elide a no-effect py func call during benchmark
   if [ "$BENCHMARK_BACKEND" != "triton-cpu" ]; then
     echo "ERROR: baseline-scalar config but backend is not triton-cpu"; exit 1
   fi
 elif [ "$config" = "baseline-block" ]; then
+  export PREPROCESS_EXTERNAL=1 # elide a no-effect py func call during benchmark
   if [ "$BENCHMARK_BACKEND" != "triton-cpu" ]; then
     echo "ERROR: baseline-block config but backend is not triton-cpu"; exit 1
   fi
   export USE_BLOCK_POINTERS=1
 elif [ "$config" = "xsmm-scalar" ]; then
+  export PREPROCESS_EXTERNAL=1 # elide a no-effect py func call during benchmark
   if [ "$BENCHMARK_BACKEND" != "triton-xsmm" ]; then
     echo "ERROR: xsmm config but backend is not triton-xsmm"; exit 1
   fi
   export TRITON_CPU_TRITON_XSMM=1
 elif [ "$config" = "xsmm-block" ]; then
+  export PREPROCESS_EXTERNAL=1 # elide a no-effect py func call during benchmark
   if [ "$BENCHMARK_BACKEND" != "triton-xsmm" ]; then
     echo "ERROR: xsmm config but backend is not triton-xsmm"; exit 1
   fi
