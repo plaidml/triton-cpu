@@ -29,10 +29,10 @@ for datatype in f32 bf16 bf8; do
       time $SCRIPT_DIR/python/tutorials/03-matrix-multiplication-cpu.sh $config $num_threads --datatype $datatype --backend $backend 2>&1
       echo -e "\n\n"
     done
-    for benchmark in xsmm-pad-k xsmm-loop-collapse-pad-b; do
+    for config in xsmm-pad-k xsmm-loop-collapse-pad-b; do
       for external_pad in "" "--external-pad"; do
         echo -e "BENCHMARK: backend: $backend | config: $config | threads: $num_threads | type: $datatype | pad: $external_pad"
-        time $SCRIPT_DIR/python/tutorials/03-matrix-multiplication-cpu.sh $benchmark $num_threads --datatype $datatype --backend $backend $external_pad 2>&1
+        time $SCRIPT_DIR/python/tutorials/03-matrix-multiplication-cpu.sh $config $num_threads --datatype $datatype --backend $backend $external_pad 2>&1
         echo -e "\n\n"
       done
     done
