@@ -488,7 +488,7 @@ STR_TYPE = str(DATA_TYPE).rsplit('.')[-1]
 @triton.testing.perf_report(
     triton.testing.Benchmark(
         x_names=["M", "N", "K"],  # Argument names to use as an x-axis for the plot
-        x_vals=[128 * i for i in range(2, 33)],  # Different possible values for `x_name`
+        x_vals=[128 * i for i in range(2, 25)],  # Different possible values for `x_name`
         line_arg='provider',  # Argument name whose value corresponds to a different line in the plot.
         line_vals=LINE_VALS,  # Possible values for `line_arg`.
         line_names=LINE_NAMES,  # Label name for the lines.
