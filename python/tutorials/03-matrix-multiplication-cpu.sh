@@ -43,6 +43,9 @@ if [ "$config" = "baseline" ]; then
   if [ "$BENCHMARK_BACKEND" != "torch-cpu-native" ] && [ "$BENCHMARK_BACKEND" != "torch-cpu-compile" ]; then
     echo "ERROR: baseline config but backend is not torch-cpu-native or torch-cpu-compile"; exit 1
   fi
+  if [ "$DATATYPE" == "bf8" ]; then
+    echo "ERROR: torch-cpu-native and torch-cpu-compile are too slow on bf8 (~1GFLOPS)"; exit 1
+  fi
 elif [ "$config" = "baseline-scalar" ]; then
   export PREPROCESS_EXTERNAL=1 # elide a no-effect py func call during benchmark
   if [ "$BENCHMARK_BACKEND" != "triton-cpu" ]; then
