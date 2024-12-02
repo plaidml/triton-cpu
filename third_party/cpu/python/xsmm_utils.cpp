@@ -43,10 +43,14 @@ void fastZeroPad2D(const at::Tensor &input, torch::Tensor &output) {
 
 #pragma omp parallel for schedule(static)
   for (int i = 0; i < inSizes[0]; ++i) {
+#if 0
     libxsmm_meltw_unary_param param;
     param.in.primary = baseIn + i * inSizes[1] * byteSize;
     param.out.primary = outIn + i * outSizes[1] * byteSize;
     identityFn(&param);
+#else
+    std::memcpy( outIn + i * outSizes[1] * byteSize, baseIn + i * inSizes[1] * byteSize, inSizes[1]*byteSize );
+#endif
     // Zero out right padding.
     std::memset(outIn + i * outSizes[1] * byteSize + inSizes[1] * byteSize, 0,
                 byteSize * padRight);
