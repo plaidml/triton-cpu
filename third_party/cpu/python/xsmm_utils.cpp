@@ -1,6 +1,8 @@
 #include <torch/extension.h>
 
+#if 0
 #include "libxsmm.h"
+#endif
 #include <omp.h>
 
 #include <cstring>
@@ -14,6 +16,7 @@ void fastZeroPad2D(const at::Tensor &input, torch::Tensor &output) {
              outSizes[1] >= inSizes[1] && byteSize == output.element_size() &&
              "Invalid fastZeroPad2D tensors");
 
+#if 0
   libxsmm_datatype dtype;
   if (byteSize == 4)
     dtype = LIBXSMM_DATATYPE_F32;
@@ -36,6 +39,7 @@ void fastZeroPad2D(const at::Tensor &input, torch::Tensor &output) {
   libxsmm_bitfield flags = LIBXSMM_MELTW_FLAG_UNARY_NONE;
   libxsmm_meltwfunction_unary identityFn = libxsmm_dispatch_meltw_unary(
       LIBXSMM_MELTW_TYPE_UNARY_IDENTITY, shape, flags);
+#endif
 
   void *baseIn = input.data_ptr();
   void *outIn = output.data_ptr();

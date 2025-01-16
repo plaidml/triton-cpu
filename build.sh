@@ -23,8 +23,8 @@ if [ $? != 0 ]; then
 fi
 
 echo "===================================== Setting up LIBXSMM for paddeing"
-export XSMM_ROOT_DIR=$(realpath $(find python/build/ -type d -name xsmm-src | grep -v third_party))
-export XSMM_LIB_DIR=$(realpath python/triton/_C)
+#export XSMM_ROOT_DIR=$(realpath $(find python/build/ -type d -name xsmm-src | grep -v third_party))
+#export XSMM_LIB_DIR=$(realpath python/triton/_C)
 cd third_party/cpu/python
 python setup.py install
 cd ../../../
