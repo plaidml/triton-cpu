@@ -230,7 +230,6 @@ struct DotToXsmm : public OpRewritePattern<triton::DotOp> {
     //
     // TODO: Expand heuristics about brgemm rewrite profitability.
     // TODO: Allow for batch dimension.
-#if 0 // Disable rewrite to BRGEMM to test runtime LDs with GEMM
     int64_t kDim = lhs.getType().getShape().back();
     auto accShape = acc.getType().getShape();
     constexpr int64_t kTile = 32;
@@ -251,7 +250,6 @@ struct DotToXsmm : public OpRewritePattern<triton::DotOp> {
       auto mapC = AffineMap::getMultiDimMapWithTargets(4, {1, 2}, ctx);
       indexingMaps = SmallVector<AffineMap>{mapA, mapB, mapC};
     }
-#endif
 
     // TODO: Perform this check much earlier before any rewrites.
     auto brgemmInfo = xsmm::utils::isMappableToBrgemm(rewriter, dotOp, inputs,
