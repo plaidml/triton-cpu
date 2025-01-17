@@ -307,7 +307,9 @@ extern "C" void xsmm_brgemm_invoke(const libxsmm_datatype dType,
                                    int64_t addr, void *alignedPtrA,
                                    int64_t offsetA, void *alignedPtrB,
                                    int64_t offsetB, void *alignedPtrC,
-                                   int64_t offsetC, int64_t numBatches) {
+                                   int64_t offsetC, int64_t numBatches,
+                                   int64_t lda, int64_t ldb, int64_t ldc,
+                                   int64_t stride_a, int64_t stride_b) {
   libxsmm_xmmfunction sgemm;
   libxsmm_gemm_param gemm_param;
 
@@ -318,6 +320,29 @@ extern "C" void xsmm_brgemm_invoke(const libxsmm_datatype dType,
   gemm_param.a.primary = get_base_ptr(dType, alignedPtrB, offsetB);
   gemm_param.b.primary = get_base_ptr(dType, alignedPtrA, offsetA);
   gemm_param.c.primary = get_base_ptr(out_dtype, alignedPtrC, offsetC);
+
+
+  // Pass LDs at runtime.
+  // Switch A with B for col-major.
+  gemm_param.a.quinary = &ldb;
+  gemm_param.b.quinary = &lda;
+  gemm_param.c.quinary = &ldc;
+
+  size_t typeSize;
+  if (dType == LIBXSMM_DATATYPE_F32)
+    typeSize = sizeof(float);
+  else if (dType == LIBXSMM_DATATYPE_BF16)
+    typeSize = sizeof(bf16);
+  else if (dType == LIBXSMM_DATATYPE_BF8)
+    typeSize = sizeof(uint8_t);
+  else
+    assert(false && "unsupported datatype");
+
+  // Switch A with B for col-major.
+  int64_t l_stride_a = stride_b * typeSize;
+  int64_t l_stride_b = stride_a * typeSize;
+  gemm_param.a.secondary = &l_stride_a;
+  gemm_param.b.secondary = &l_stride_b;
 
   sgemm.gemm = reinterpret_cast<libxsmm_gemmfunction>(addr);
   sgemm.gemm(&gemm_param);

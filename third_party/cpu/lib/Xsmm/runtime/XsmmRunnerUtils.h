@@ -71,7 +71,8 @@ xsmm_binary_invoke(const libxsmm_datatype dType, int64_t addr,
 extern "C" MLIR_RUNNERUTILS_EXPORT void xsmm_brgemm_invoke(
     const libxsmm_datatype dType, const libxsmm_datatype out_dtype,
     int64_t addr, void *alignedPtrA, int64_t offsetA, void *alignedPtrB,
-    int64_t offsetB, void *alignedPtrC, int64_t offsetC, int64_t numBatches);
+    int64_t offsetB, void *alignedPtrC, int64_t offsetC, int64_t numBatches,
+    int64_t lda, int64_t ldb, int64_t ldc, int64_t stride_a, int64_t stride_b);
 
 extern "C" MLIR_RUNNERUTILS_EXPORT void xsmm_fused_brgemm_invoke(
     const libxsmm_datatype dType, int64_t addr, void *alignedPtrA,

@@ -1000,6 +1000,8 @@ buildBrgemmCalls(PatternRewriter &rewriter, Operation *op, ValueRange inputs,
   auto ldc = metadataC.getStrides()[posLeadingDimC];
   auto runtimeLd = rewriter.create<arith::ConstantIntOp>(loc, /*value=*/0xffffffff,
                                                         /*width=*/64);
+  auto runtimeStride = rewriter.create<arith::ConstantIntOp>(loc, /*value=*/0,
+                                                             /*width=*/64);
 
   Value strideA, strideB;
   std::optional<Value> batchSize;
@@ -1033,15 +1035,10 @@ buildBrgemmCalls(PatternRewriter &rewriter, Operation *op, ValueRange inputs,
   }
 
   auto sizesAndStrides = SmallVector<Value>{m, n, k};
-  // For GEMM, use runtime leading dims with invoke.
-  // Otherwise, JIT leading dims through invoke.
-  if (!posBatch)
-    sizesAndStrides.append({runtimeLd, runtimeLd, runtimeLd});
-  else
-    sizesAndStrides.append({lda, ldb, ldc});
+  sizesAndStrides.append({runtimeLd, runtimeLd, runtimeLd});
   // Pass strides for BRGEMM.
   if (posBatch)
-    sizesAndStrides.append({strideA, strideB});
+    sizesAndStrides.append({runtimeStride, runtimeStride});
   for (auto sizeOrStride : sizesAndStrides) {
     auto sizeOrStrideInt64 = getValueOrCreateCastToIndexLike(
         rewriter, op->getLoc(), integer64, sizeOrStride);
@@ -1066,12 +1063,14 @@ buildBrgemmCalls(PatternRewriter &rewriter, Operation *op, ValueRange inputs,
   operandRange.push_back(dispatched.getResult(0));
   for (auto operand : inputs)
     operandRange.push_back(operand);
-  // Pass LDs at runtime for GEMM.
-  if (!posBatch)
-  operandRange.append({lda, ldb, ldc});
   // Pass batch size for BRGEMM.
   if (posBatch)
     operandRange.push_back(*batchSize);
+  // Pass LDs at runtime.
+  operandRange.append({lda, ldb, ldc});
+  // Pass strdes at runtime for BRGEMM.
+  if (posBatch)
+    operandRange.append({strideA, strideB});
   auto invokeCall = xsmm::utils::buildInvokeCall(
       rewriter, loc, module, operandRange, invokeName, dtype, outDtype);
   return std::make_pair(&*dispatched, &*invokeCall);
