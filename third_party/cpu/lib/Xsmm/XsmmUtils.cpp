@@ -9,6 +9,7 @@
 #include "XsmmUtils.h"
 #include "ValueUtils.h"
 #include "VnniUtils.h"
+#include "kernels/KernelUtils.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -1015,6 +1016,48 @@ buildBrgemmCalls(PatternRewriter &rewriter, Operation *op, ValueRange inputs,
 
   auto dtype = xsmm::utils::getDataType(rewriter, inputs[0].getType());
   auto outDtype = xsmm::utils::getDataType(rewriter, inputs[2].getType());
+
+  // Check if a static kernel can be used.
+  auto aShape = dyn_cast<ShapedType>(A.getType()).getShape();
+  auto bShape = dyn_cast<ShapedType>(B.getType()).getShape();
+  int64_t mSize = aShape[posMInA];
+  int64_t nSize = bShape[posNInB];
+  int64_t kSize = aShape[posKInA];
+
+  auto kernelCompType = posBatch ? ::xsmm::kernel::ComputeType::BRGEMM
+                                 : ::xsmm::kernel::ComputeType::GEMM;
+  auto elemType = dyn_cast<ShapedType>(A.getType()).getElementType();
+  auto kernelDataType = elemType.isBF16() ? ::xsmm::kernel::DataType::BF16
+                                          : ::xsmm::kernel::DataType::F32;
+  if ((elemType.isF32() || elemType.isBF16()) &&
+      ::xsmm::kernel::isConfigSupported(kernelCompType, kernelDataType, mSize,
+                                        nSize, kSize)) {
+    // Generate a call for static libxsmm kernel.
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+
+    std::string invokeName = posBatch ? "xsmm_brgemm" : "xsmm_gemm";
+    invokeName += elemType.isBF16() ? "_bf16" : "_f32";
+    invokeName += "_m" + std::to_string(mSize);
+    invokeName += "_n" + std::to_string(nSize);
+    invokeName += "_k" + std::to_string(kSize);
+
+    SmallVector<Value, 6> operandRange;
+    for (auto operand : inputs)
+      operandRange.push_back(operand);
+    // Pass batch size for BRGEMM.
+    if (posBatch)
+      operandRange.push_back(*batchSize);
+    // Pass LDs at runtime.
+    operandRange.append({lda, ldb, ldc});
+    // Pass strdes at runtime for BRGEMM.
+    if (posBatch)
+      operandRange.append({strideA, strideB});
+    auto invokeCall = xsmm::utils::buildInvokeCall(
+        rewriter, loc, module, operandRange, invokeName, dtype, outDtype);
+    return std::make_pair(nullptr, &*invokeCall);
+  }
+
+  // Generate calls for JITed libxsmm kernel.
   SmallVector<Value, 11> dispatchOperands;
   SmallVector<Type, 11> dispatchOperandTypes;
   // Dispatch the data type.

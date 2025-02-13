@@ -56,4 +56,14 @@ check_library_exists(rt sched_yield "" XSMM_LIBRT)
 if(XSMM_LIBRT)
   target_link_libraries(xsmm PUBLIC rt)
 endif()
-#target_link_libraries(xsmm PUBLIC c)
+
+# Build standalone LIBXSMM binary export generator
+add_executable(xsmm-generator
+  ${LIBXSMMROOT}/src/libxsmm_binaryexport_generator.c
+)
+add_dependencies(xsmm-generator xsmm)
+target_link_libraries(xsmm-generator PUBLIC xsmm)
+target_include_directories(xsmm-generator PUBLIC
+  $<BUILD_INTERFACE:${XSMM_INCLUDE_DIRS}>
+  $<INSTALL_INTERFACE:include/xsmm>
+)

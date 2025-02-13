@@ -15,7 +15,10 @@ add_library(TritonCPURuntime SHARED ${CMAKE_CURRENT_SOURCE_DIR}/runtime/cpu_runt
 target_link_libraries(TritonCPURuntime PRIVATE LLVMSupport)
 
 add_library(TritonCPUXsmmRuntime SHARED ${CMAKE_CURRENT_SOURCE_DIR}/lib/Xsmm/runtime/XsmmRunnerUtils.cpp)
-target_link_libraries(TritonCPUXsmmRuntime PRIVATE xsmm)
+target_link_libraries(TritonCPUXsmmRuntime
+  PRIVATE xsmm
+  PUBLIC TritonCPUXsmmKernels
+)
 set_property(TARGET TritonCPUXsmmRuntime PROPERTY CXX_STANDARD 11)
 target_compile_definitions(TritonCPUXsmmRuntime PRIVATE mlir_c_runner_utils_EXPORTS)
 target_include_directories(TritonCPUXsmmRuntime

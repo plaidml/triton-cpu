@@ -1,3 +1,5 @@
+add_subdirectory(kernels)
+
 get_property(extension_libs GLOBAL PROPERTY MLIR_EXTENSION_LIBS)
 
 add_triton_library(TritonCPUXsmm
@@ -12,6 +14,7 @@ add_triton_library(TritonCPUXsmm
     TritonCPUXsmmPassIncGen
     TritonCPUXsmmAttrDefIncGen
     xsmm
+    TritonCPUXsmmKernelUtils
 
     LINK_LIBS PUBLIC
     ${extension_libs}
@@ -25,6 +28,7 @@ add_triton_library(TritonCPUXsmm
     MLIRLinalgUtils
     TritonCPUIR
     xsmm
+    TritonCPUXsmmKernelUtils
 )
 
 target_include_directories(TritonCPUXsmm
