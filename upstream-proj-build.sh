@@ -11,7 +11,8 @@ echo "===================================== Setting Up Python venv"
 uv venv --allow-existing
 source .venv/bin/activate
 uv pip install -r ./python/requirements.txt
-uv pip install ninja cmake wheel pybind11 scipy numpy torch pytest lit pandas matplotlib
+uv pip install -r ./python/test-requirements.txt
+uv pip install torch matplotlib
 
 echo "===================================== Building LLVM"
 LLVM_DIR="llvm-project-triton-cpu"
@@ -22,7 +23,7 @@ if [ ! -d ${HERE}/../${LLVM_DIR} ]; then
   git checkout `cat ${HERE}/cmake/llvm-hash.txt`
   mkdir -p build
   pushd build
-  cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_ASSERTIONS=True -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DLLVM_USE_LINKER=lld -DLLVM_ENABLE_PROJECTS="mlir;llvm" -DLLVM_TARGETS_TO_BUILD="host;NVPTX;AMDGPU" ../llvm
+  cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_ASSERTIONS=True -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DLLVM_USE_LINKER=lld -DLLVM_ENABLE_PROJECTS="mlir;llvm;lld" -DLLVM_TARGETS_TO_BUILD="host;NVPTX;AMDGPU" ../llvm
   ninja
   popd
   popd
@@ -56,13 +57,13 @@ export XSMM_LIBRARY_DIRS=$XSMM_INSTALL/lib
 export XSMM_INCLUDE_DIRS=$XSMM_INSTALL/include
 
 echo "===================================== Build"
-uv pip install -vvv -e python/
+uv pip install -vvv -e .
 if [ $? != 0 ]; then
   exit 1
 fi
 
 echo "===================================== CMake Tests"
-ctest --test-dir python/build/cmake*
+ctest --test-dir build/cmake*
 if [ $? != 0 ]; then
   exit 1
 fi
