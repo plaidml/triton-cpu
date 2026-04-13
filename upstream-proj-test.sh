@@ -5,8 +5,9 @@ NPROC=64
 
 echo "===================================== Run python unit tests"
 
-python -m pytest -s -n $NPROC --device cpu \
-    python/test/unit/language/test_core.py -m cpu
+python -m pytest -s -n $NPROC --device cpu -m cpu\
+    python/test/unit/language/test_core.py \
+    python/test/unit/language/test_tensor_descriptor.py
 python -m pytest -s -n $NPROC --device cpu \
     python/test/unit/cpu/test_math.py \
     python/test/unit/cpu/test_opt.py \
